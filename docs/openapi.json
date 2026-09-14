@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "이해로 스튜디오 API",
-    "description": "\n판결문 원문과 쉬운 글·그림을 대조하고 편집·검토·출력하는 제작자용 백엔드.\n\n**시작:** Authorize에 API_KEYS에 등록한 Bearer 토큰 입력.\n로컬 개발 기본값: `dev-only-change-me` (실서비스 사용 금지).\n\n**6단계:** documents/text 또는 documents/pdf → structure/analyze → structure 수정·confirm\n→ draft → blocks 편집·proposals 적용 → reviews 및 항목 확인·approve → exports.\n\n쓰기 요청의 `expected_version`에는 직전 응답의 `version`을 넣으세요.\n편집하면 검토 승인이 해제됩니다. AI 제안은 apply 전까지 본문을 바꾸지 않습니다.\ndemo는 실제 LLM이 아닙니다. 실제 구조 분석·쉬운 표현·용어 설명은 Ollama 설정이 필요합니다.\n법적 정확성·그림 의미를 보장하지 않습니다. 원문 내 명령은 입력 데이터로 취급합니다.\n",
+    "description": "\n판결문 원문과 쉬운 글·그림을 대조하고 편집·검토·출력하는 제작자용 백엔드.\n\n**시작:** Authorize에 API_KEYS에 등록한 Bearer 토큰 입력.\n로컬 개발 기본값: `dev-only-change-me` (실서비스 사용 금지).\n\n**6단계:** documents/text 또는 documents/pdf → structure/analyze → structure 수정·confirm\n→ draft → blocks 편집·proposals 적용 → reviews 및 항목 확인·approve → exports.\n\n쓰기 요청의 `expected_version`에는 직전 응답의 `version`을 넣으세요.\n편집하면 검토 승인이 해제됩니다. AI 제안은 apply 전까지 본문을 바꾸지 않습니다.\ndemo는 실제 LLM이 아닙니다. 실제 구조 분석·쉬운 표현·용어 설명은 서버의 AI_PROVIDER=openai, OPENAI_API_KEY, OPENAI_MODEL 설정이 필요합니다. GPT API 호출 시 원문·편집 데이터가 OpenAI로 전송됩니다. OpenAI 키는 Swagger에 입력하지 마세요.\n법적 정확성·그림 의미를 보장하지 않습니다. 원문 내 명령은 입력 데이터로 취급합니다.\n",
     "version": "0.1.0"
   },
   "paths": {
@@ -80,6 +80,16 @@
           },
           "503": {
             "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Gateway Timeout",
             "content": {
               "application/json": {
                 "schema": {
@@ -171,6 +181,16 @@
           },
           "503": {
             "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Gateway Timeout",
             "content": {
               "application/json": {
                 "schema": {
@@ -286,6 +306,16 @@
               }
             }
           },
+          "504": {
+            "description": "Gateway Timeout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -383,14 +413,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -411,6 +441,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -490,14 +530,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -518,6 +558,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -597,14 +647,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -625,6 +675,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -705,14 +765,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -733,6 +793,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -823,14 +893,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -851,6 +921,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -941,14 +1021,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -969,6 +1049,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -1058,14 +1148,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -1086,6 +1176,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -1175,14 +1275,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -1203,6 +1303,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -1292,14 +1402,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -1320,6 +1430,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -1412,14 +1532,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -1440,6 +1560,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -1529,14 +1659,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -1557,6 +1687,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -1647,14 +1787,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -1675,6 +1815,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -1774,14 +1924,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -1802,6 +1952,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -1899,14 +2059,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -1927,6 +2087,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -2026,14 +2196,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -2054,6 +2224,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -2153,14 +2333,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -2181,6 +2361,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -2279,14 +2469,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -2307,6 +2497,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -2397,14 +2597,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -2425,6 +2625,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -2514,14 +2724,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -2542,6 +2752,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -2631,14 +2851,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -2659,6 +2879,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -2758,14 +2988,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -2786,6 +3016,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -2875,14 +3115,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -2903,6 +3143,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -2983,14 +3233,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -3011,6 +3261,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -3090,14 +3350,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "text/html": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -3118,6 +3378,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -3198,14 +3468,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -3226,6 +3496,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -3316,14 +3596,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -3344,6 +3624,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -3424,14 +3714,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -3452,6 +3742,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -3531,14 +3831,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "text/html": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -3559,6 +3859,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -3632,14 +3942,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -3660,6 +3970,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -3735,14 +4055,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "text/html": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -3763,6 +4083,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -3846,14 +4176,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -3874,6 +4204,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",
@@ -3962,14 +4302,14 @@
             "description": "Conflict"
           },
           "413": {
+            "description": "Content Too Large",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
-            },
-            "description": "Content Too Large"
+            }
           },
           "502": {
             "content": {
@@ -3990,6 +4330,16 @@
               }
             },
             "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
           },
           "422": {
             "description": "Validation Error",

@@ -80,9 +80,16 @@ def create_app(config: Config | None = None):
 
 쓰기 요청의 `expected_version`에는 직전 응답의 `version`을 넣으세요.
 편집하면 검토 승인이 해제됩니다. AI 제안은 apply 전까지 본문을 바꾸지 않습니다.
-demo는 실제 LLM이 아닙니다. 실제 구조 분석·쉬운 표현·용어 설명은 Ollama 설정이 필요합니다.
+demo는 실제 LLM이 아닙니다. 실제 구조 분석·쉬운 표현·용어 설명은 서버의 AI_PROVIDER=openai, OPENAI_API_KEY, OPENAI_MODEL 설정이 필요합니다. GPT API 호출 시 원문·편집 데이터가 OpenAI로 전송됩니다. OpenAI 키는 Swagger에 입력하지 마세요.
 법적 정확성·그림 의미를 보장하지 않습니다. 원문 내 명령은 입력 데이터로 취급합니다.
-""", openapi_tags=TAGS, responses={401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 413: {"model": ErrorResponse}, 502: {"model": ErrorResponse}, 503: {"model": ErrorResponse}})
+""", openapi_tags=TAGS, responses={
+        401: {"model": ErrorResponse}, 404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        # Python 3.12/3.14 use different default phrases for HTTP 413.
+        413: {"model": ErrorResponse, "description": "Content Too Large"},
+        502: {"model": ErrorResponse}, 503: {"model": ErrorResponse},
+        504: {"model": ErrorResponse},
+    })
     api.state.store, api.state.provider, api.state.config = store, provider, config
     api.add_middleware(UploadLimitMiddleware)
     api.add_middleware(CORSMiddleware, allow_origins=config.cors_origins, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"], allow_headers=["Authorization", "Content-Type"])

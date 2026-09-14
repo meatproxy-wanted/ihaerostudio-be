@@ -2,6 +2,8 @@
 
 기본 경로: `/api/v1`. 보호된 요청에는 `Authorization: Bearer <token>`을 붙입니다. 공개 경로는 `/health`, `/docs`, `/redoc`, `/openapi.json`, `/share/{token}`입니다. Swagger의 Authorize에는 토큰 문자열만 넣으세요.
 
+실제 AI는 서버의 `AI_PROVIDER=openai`, `OPENAI_API_KEY`, `OPENAI_MODEL`로 설정합니다. **OpenAI 키를 프런트엔드나 Swagger에 넣지 마세요.** 프런트엔드 API 경로와 요청 형식은 동일합니다. `/health`의 `provider`로 `demo`/`openai` 설정을 구분할 수 있지만 이 값은 실제 모델 호출 성공 여부를 뜻하지 않습니다. GPT 작업 시 원문·편집 데이터가 OpenAI로 전송되므로 사용자에게 이를 안내하세요.
+
 ## ① 판결문 업로드
 
 `POST /documents/text` JSON: `examples/judgment.json` 참고.
@@ -138,5 +140,8 @@ AI 제안 생성: `POST /documents/{id}/blocks/{blockId}/proposals`
 | 409 | 버전 충돌, 구조 미확인, 만료된 제안, 미완료 검토 |
 | 413 | 파일·텍스트·요청 상한 초과 |
 | 422 | 잘못된 원문 근거, 입력, 스캔 PDF, 분류·발화자 모순 |
-| 502 | AI 연결 또는 결과 검증 실패 |
-| 503 | 실제 AI 미설정, 한글 글꼴 미설치 |
+| 502 | AI 연결/결과 검증 실패, `ai_refusal`, `ai_incomplete_response` |
+| 503 | 실제 AI 미설정, 한글 글꼴 미설치, `ai_rate_limited`(OpenAI 한도/429) |
+| 504 | `ai_timeout`(GPT 응답 시간 초과) |
+
+AI 오류 시 기존 문서와 버전은 유지됩니다. 프런트엔드는 오류를 표시하고 사용자 요청에 따라 재시도하며, 자동 무한 재시도를 하지 마세요.

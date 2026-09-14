@@ -60,22 +60,28 @@ curl -X POST http://127.0.0.1:8000/api/v1/documents/text \
 
 화면 흐름별 상세 API 사용법은 `docs/API.md`를 참고하세요.
 
-## 실제 AI 연결: Ollama
+## 실제 AI 연결: OpenAI GPT API
 
 기본 `AI_PROVIDER=demo`는 **실제 LLM이 아닙니다**. 명시적 `원고:`, `피고:`, `원고 주장:`, `피고 주장:`, `법원 판단:`, `법원 결정:` 표제만 분류하고 본문을 복사합니다. 임의 판결문은 `unknown`으로 남으므로 제작자가 구조를 수정해야 합니다. 데모는 쉬운 표현·용어 의미를 만들어내지 않으며, 해당 AI 작업은 `503 ai_not_configured`를 반환합니다.
 
-로컬 Ollama를 실행하고 구조화 JSON 출력과 한국어를 지원하는 모델을 준비한 뒤 서버를 다음 환경으로 재시작하세요. 아래 모델 값은 설치한 모델의 정확한 이름으로 교체합니다.
+실제 서비스는 OpenAI GPT API를 사용합니다. 서버 환경에 API 키와 계정에서 사용할 수 있는 **Responses API + Structured Outputs 지원 GPT 모델 ID**를 지정한 뒤 재시작하세요. 모델은 임의로 고정하지 않으며 `OPENAI_MODEL`이 필수입니다. 아래 모델 값은 실제 모델 ID로 교체하세요.
 
 ```bash
-export AI_PROVIDER=ollama
-export OLLAMA_URL=http://127.0.0.1:11434
-export OLLAMA_MODEL='your-installed-model'
+export AI_PROVIDER=openai
+read -s OPENAI_API_KEY  # 키를 입력하고 Enter. 터미널 화면에 표시되지 않습니다.
+export OPENAI_API_KEY
+export OPENAI_MODEL='your-supported-gpt-model-id'
+export OPENAI_MAX_OUTPUT_TOKENS=16384
 uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
 ```
 
-연동 구현은 Ollama `/api/chat`의 JSON Schema `format`을 사용합니다. 사건 구조 추출, 쉬운 초안 작성, 더 쉽게 바꾸기, 문장 나누기, 용어 설명 추가를 지원합니다. 문서의 내용을 지시로 실행하지 않도록 시스템 프롬프트에서 구분하고, 결과 스키마와 원문 인용·오프셋을 서버에서 다시 검증합니다. **근거 인용이 일치해도 해석의 정확성이 보장되는 것은 아닙니다.**
+연동 구현은 `POST https://api.openai.com/v1/responses`와 `text.format`의 strict JSON Schema를 사용합니다. 사건 구조 추출, 쉬운 초안 작성, 더 쉽게 바꾸기, 문장 나누기, 용어 설명 추가를 지원합니다. 문서의 내용을 지시로 실행하지 않도록 시스템 프롬프트에서 구분하고, 결과 스키마와 원문 인용·오프셋을 서버에서 다시 검증합니다. **근거 인용이 일치해도 해석의 정확성이 보장되는 것은 아닙니다.**
 
-로컬 주소를 사용하면 원문은 설정된 로컬 Ollama로 전달됩니다. `OLLAMA_URL`을 외부 서버로 변경하면 원문이 그 서버로 전송됩니다. 본 구현에는 자동 웹 검색, AI 도구 실행, 이미지 생성·그림 픽셀 의미 판독이 없습니다. 그림은 PNG/JPEG/WebP 업로드 후 교체합니다.
+`OPENAI_API_KEY`는 **서버 전용 비밀값**입니다. 프런트엔드, Swagger Authorize, Git 저장소에 넣지 마세요. Swagger의 `API_KEYS` 제작자 토큰과는 별개입니다. 배포 서비스의 Secret 환경변수로 등록하세요. `AI_PROVIDER=openai`인데 키나 모델이 없으면 시작 단계에서 실패하며 데모로 조용히 전환하지 않습니다. API 키 없이 화면 흐름을 테스트할 때만 `AI_PROVIDER=demo`를 명시하세요.
+
+GPT 작업을 실행하면 원문·사건 구조·편집 대상 텍스트가 OpenAI로 전송됩니다. 민감정보가 있는 판결문은 전송 권한과 비식별화·보관 정책을 먼저 확인하세요. 요청에 `store:false`를 사용하지만 이것만으로 무보관(Zero Data Retention)을 보장하지는 않습니다. [OpenAI 데이터 관리 문서](https://developers.openai.com/api/docs/guides/your-data)를 확인하세요. 본 구현에는 자동 웹 검색, AI 도구 실행, 이미지 생성·그림 픽셀 의미 판독이 없습니다. 그림은 PNG/JPEG/WebP 업로드 후 교체합니다.
+
+시간 초과는 `504 ai_timeout`, API 한도/429는 `503 ai_rate_limited`, 거절·불완전 응답은 `502 ai_refusal` / `ai_incomplete_response`입니다. 실패 시 문서/버전은 변경하지 않고, 제공자 오류 원문이나 API 키는 클라이언트에 반환하지 않습니다. 자동 재시도는 하지 않습니다.
 
 AI 작업은 제한된 길이의 문서에 대한 **동기 요청(최대 120초)**입니다. 대규모 운영에는 별도 작업 큐·워커·문서 분할 처리가 필요합니다. 긴 문서를 모델 문맥에 충분히 담을 수 있는지 운영자가 확인해야 합니다. 입력 상한을 넘으면 원문을 몰래 잘라 쓰지 않고 거부합니다.
 
@@ -110,11 +116,11 @@ export API_KEYS='{"a-random-secret-at-least-32-characters":"maker-01"}'
 
 ```bash
 cp .env.example .env
-# .env에서 API_KEYS를 실제 랜덤 토큰으로 변경
+# .env에서 API_KEYS를 실제 랜덤 토큰으로 변경하고 OPENAI_API_KEY, OPENAI_MODEL 입력
 docker compose up --build
 ```
 
-접속 주소는 동일하게 http://127.0.0.1:8000/docs 입니다. Docker Compose는 호스트의 localhost에만 포트를 노출합니다. Ollama 사용 시 `OLLAMA_URL=http://host.docker.internal:11434`를 사용합니다.
+접속 주소는 동일하게 http://127.0.0.1:8000/docs 입니다. Docker Compose는 호스트의 localhost에만 포트를 노출하고, 기본 실제 AI 제공자는 `openai`입니다. 별도 로컬 모델 서버는 필요 없습니다. 데모 실행은 `.env`에 `AI_PROVIDER=demo`를 지정하세요.
 
 `APP_ENV=production` 플래그는 인증 설정 검사를 강화할 뿐, 이 MVP가 외부 공개 운영 준비를 완료했다는 의미는 아닙니다. 외부 공개 전 TLS·실제 사용자 인증/토큰 관리·요청 속도 제한·업로드 악성 파일 검사와 격리된 PDF 처리·저장 암호화/보관 및 삭제 정책·백업을 적용하세요. SQLite 이력은 감사 확인용이며 변조 방지 저장소는 아닙니다. 공유 해제는 이미 다운로드한 파일을 회수하지 않습니다.
 
@@ -125,7 +131,7 @@ pytest -q
 PYTHONPATH=. python scripts/export_openapi.py
 ```
 
-테스트는 원문 근거, 작성자 격리, 수정 승인, 동시 편집 충돌, 검토 게이트, PDF 텍스트, 공유 만료·해제, XSS 이스케이프, 업로드 오류와 Ollama JSON 계약을 검증합니다. 실제 로컬 AI 모델은 설치되어 있지 않아 라이브 추론 품질은 검증하지 않았습니다. Docker 빌드는 제공하지만 현재 Mac에서 Docker 실행 검증은 하지 않았습니다.
+테스트는 원문 근거, 작성자 격리, 수정 승인, 동시 편집 충돌, 검토 게이트, PDF 텍스트, 공유 만료·해제, XSS 이스케이프, 업로드 오류와 GPT Responses API JSON 계약·오류 처리를 검증합니다. API 테스트는 모의 응답을 사용하며 유료 API를 호출하지 않습니다. 실제 API 키·모델을 연결한 라이브 추론 품질 검증은 별도로 필요합니다.
 
 `requirements.lock`은 이번 검증 환경의 정확한 버전입니다. `pyproject.toml`은 지원 버전 범위를 제공합니다.
 
@@ -138,7 +144,7 @@ app/
   config.py     환경설정
   store.py      SQLite 저장·버전 충돌·출력 스냅샷
   sources.py    PDF 텍스트·이미지 정제
-  providers.py  데모와 Ollama 연동
+  providers.py  데모와 OpenAI GPT Responses API 연동
   domain.py     근거 검증·검토 규칙·독자용 데이터
   render.py     한글 PDF·독자 HTML
 docs/           OpenAPI JSON과 화면별 API 가이드
@@ -147,4 +153,4 @@ scripts/        전체 흐름 데모·OpenAPI 내보내기
 tests/          통합·도메인 테스트
 ```
 
-설계에 참고한 공식 문서: [FastAPI 파일 업로드](https://fastapi.tiangolo.com/tutorial/request-files/), [FastAPI OpenAPI](https://fastapi.tiangolo.com/tutorial/first-steps/), [Ollama 구조화 출력](https://docs.ollama.com/capabilities/structured-outputs), [pypdf 텍스트 추출/OCR 한계](https://pypdf.readthedocs.io/en/5.7.0/user/extract-text.html).
+설계에 참고한 공식 문서: [FastAPI 파일 업로드](https://fastapi.tiangolo.com/tutorial/request-files/), [FastAPI OpenAPI](https://fastapi.tiangolo.com/tutorial/first-steps/), [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs), [pypdf 텍스트 추출/OCR 한계](https://pypdf.readthedocs.io/en/5.7.0/user/extract-text.html).

@@ -233,26 +233,140 @@ def test_openapi_docs(client):
     assert client.get("/redoc").status_code == 200
 
 
-def test_ollama_adapter_schema_and_error(client, monkeypatch):
+def test_openai_adapter_schema_and_error(client, monkeypatch):
     from app.providers import Provider
-    provider = Provider(Config(provider="ollama", ollama_model="test-local-model"))
+    provider = Provider(Config(provider="openai", openai_api_key="test-secret", openai_model="test-gpt-model"))
     d = Document.model_validate(create(client))
     demo_result = client.app.state.provider.analyze(d)
     captured = []
     def fake_post(self, url, **kwargs):
+        assert url == "https://api.openai.com/v1/responses"
+        assert kwargs["headers"]["Authorization"] == "Bearer test-secret"
         captured.append(kwargs["json"])
-        return httpx.Response(200, json={"message": {"content": demo_result.model_dump_json()}}, request=httpx.Request("POST", url))
+        return httpx.Response(200, json={"status": "completed", "output": [
+            {"type": "reasoning", "summary": []},
+            {"type": "message", "content": [{"type": "output_text", "text": demo_result.model_dump_json()}]},
+        ]}, request=httpx.Request("POST", url))
     monkeypatch.setattr(httpx.Client, "post", fake_post)
     result = provider.analyze(d)
-    assert result == demo_result and captured[0]["format"]["type"] == "object"
+    assert result == demo_result and captured[0]["text"]["format"]["schema"]["type"] == "object"
     assert captured[0]["stream"] is False
+    assert captured[0]["store"] is False
+    assert captured[0]["model"] == "test-gpt-model"
+    assert captured[0]["max_output_tokens"] == 16384
+    assert captured[0]["text"]["format"]["strict"] is True
+    assert json.loads(captured[0]["input"][1]["content"])["source"] == d.source.model_dump()
     def bad(self, url, **kwargs):
-        return httpx.Response(200, json={"message": {"content": "broken"}}, request=httpx.Request("POST", url))
+        return httpx.Response(200, json={"status": "completed", "output": [{"type": "message", "content": [{"type": "output_text", "text": "broken"}]}]}, request=httpx.Request("POST", url))
     monkeypatch.setattr(httpx.Client, "post", bad)
     from fastapi import HTTPException
     with pytest.raises(HTTPException) as error:
         provider.analyze(d)
     assert error.value.status_code == 502
+
+
+@pytest.mark.parametrize("model_name", ["Structure", "DraftResult", "SuggestionResult"])
+def test_openai_strict_schema(model_name):
+    from app import models
+    from app.providers import strict_schema
+    model = getattr(models, model_name)
+    original = model.model_json_schema()
+    schema = strict_schema(model)
+    def check(node):
+        if isinstance(node, list):
+            for child in node:
+                check(child)
+        elif isinstance(node, dict):
+            if node.get("type") == "object":
+                assert set(node["required"]) == set(node["properties"])
+                assert node["additionalProperties"] is False
+            assert not {"default", "minLength", "maxLength"}.intersection(node)
+            for key, child in node.items():
+                if key in {"properties", "$defs"}:
+                    for value in child.values():
+                        check(value)
+                else:
+                    check(child)
+    check(schema)
+    assert model.model_json_schema() == original
+    assert schema["$defs"]["Fact" if model_name == "Structure" else "BlockContent"]["properties"]["speaker_id"]["anyOf"][-1] == {"type": "null"}
+
+
+@pytest.mark.parametrize("mode,status,code", [
+    ("429", 503, "ai_rate_limited"), ("401", 502, "ai_provider_error"),
+    ("500", 502, "ai_provider_error"), ("timeout", 504, "ai_timeout"),
+    ("refusal", 502, "ai_refusal"), ("incomplete", 502, "ai_incomplete_response"),
+    ("empty", 502, "ai_provider_error"), ("malformed", 502, "ai_provider_error"),
+])
+def test_openai_failures_preserve_document(client, monkeypatch, mode, status, code):
+    provider = client.app.state.provider
+    provider.name = "openai"
+    provider.config.openai_api_key = "test-secret-never-return"
+    provider.config.openai_model = "test-gpt-model"
+    d = create(client)
+    def fake_post(self, url, **kwargs):
+        request = httpx.Request("POST", url)
+        if mode == "timeout":
+            raise httpx.ReadTimeout("test-secret-never-return", request=request)
+        if mode.isdigit():
+            return httpx.Response(int(mode), json={"error": "test-secret-never-return"}, request=request)
+        body = {"status": "completed", "output": []}
+        if mode == "refusal":
+            body["output"] = [{"type": "message", "content": [{"type": "refusal", "refusal": "test-secret-never-return"}]}]
+        elif mode == "incomplete":
+            body["status"] = "incomplete"
+        elif mode == "malformed":
+            body = ["unexpected shape"]
+        return httpx.Response(200, json=body, request=request)
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    # TestClient also inherits httpx.Client: issue the app request via .request().
+    r = client.request("POST", f'/api/v1/documents/{d["id"]}/structure/analyze', json={"expected_version": d["version"]})
+    assert r.status_code == status and r.json()["detail"]["code"] == code
+    assert "test-secret-never-return" not in r.text
+    assert client.get(f'/api/v1/documents/{d["id"]}').json() == d
+    assert len(client.get(f'/api/v1/documents/{d["id"]}/history').json()) == 1
+
+
+def test_openai_config_requires_explicit_credentials():
+    with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+        Config(provider="openai", openai_api_key="", openai_model="test-model")
+    with pytest.raises(ValueError, match="OPENAI_MODEL"):
+        Config(provider="openai", openai_api_key="test-secret", openai_model=" ")
+    with pytest.raises(ValueError, match="OPENAI_MAX_OUTPUT_TOKENS"):
+        Config(openai_max_output_tokens=0)
+    assert "test-secret" not in repr(Config(provider="openai", openai_api_key="test-secret", openai_model="test-model"))
+
+
+@pytest.mark.parametrize("edit_action", ["simplify", "split", "add_term"])
+def test_openai_draft_and_proposal_contract(client, monkeypatch, edit_action):
+    d = draft(client)
+    provider = client.app.state.provider
+    provider.name = "openai"
+    provider.config.openai_api_key = "test-secret"
+    provider.config.openai_model = "test-gpt-model"
+    captured = []
+    def fake_post(self, url, **kwargs):
+        body = kwargs["json"]
+        captured.append(body)
+        payload = json.loads(body["input"][1]["content"])
+        if body["text"]["format"]["name"] == "DraftResult":
+            assert payload["structure"] == d["structure"]
+            blocks = [content(b) for b in d["blocks"]]
+        else:
+            blocks = [{**payload["block"], "title": "검토할 수정 제안"}]
+        return httpx.Response(200, json={"status": "completed", "output": [{"type": "message", "content": [{"type": "output_text", "text": json.dumps({"blocks": blocks})}]}]}, request=httpx.Request("POST", url))
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    response = client.request("POST", f'/api/v1/documents/{d["id"]}/draft', json={"expected_version": d["version"], "replace_existing": True})
+    assert response.status_code == 200
+    d = response.json()
+    block = d["blocks"][0]
+    response = client.request("POST", f'/api/v1/documents/{d["id"]}/blocks/{block["id"]}/proposals', json={"expected_version": d["version"], "action": edit_action})
+    assert response.status_code == 201
+    proposed = response.json()
+    assert proposed["blocks"] == d["blocks"]
+    assert proposed["proposals"][-1]["provider"] == "openai"
+    assert proposed["proposals"][-1]["after"][0]["title"] == "검토할 수정 제안"
+    assert [c["text"]["format"]["name"] for c in captured] == ["DraftResult", "SuggestionResult"]
 
 
 def test_atomic_concurrent_edit(client):

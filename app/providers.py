@@ -1,4 +1,4 @@
-"""Structured local LLM adapter. No document text is sent anywhere in demo mode."""
+"""OpenAI Responses adapter. Demo mode never sends document text externally."""
 import json
 import re
 
@@ -23,6 +23,28 @@ SYSTEM = """당신은 성인 독자를 존중하는 쉬운 판결 설명자료 �
 """
 
 
+def strict_schema(model):
+    """Use the portable Structured Outputs subset; validate all limits locally."""
+    def convert(node):
+        if isinstance(node, list):
+            return [convert(value) for value in node]
+        if not isinstance(node, dict):
+            return node
+        result = {}
+        for key, value in node.items():
+            if key in {"default", "title", "examples", "minLength", "maxLength"}:
+                continue
+            if key in {"properties", "$defs"}:
+                result[key] = {name: convert(child) for name, child in value.items()}
+            else:
+                result[key] = convert(value)
+        if result.get("type") == "object":
+            result["required"] = list(result.get("properties", {}))
+            result["additionalProperties"] = False
+        return result
+    return convert(model.model_json_schema())
+
+
 class Provider:
     def __init__(self, config: Config):
         self.config = config
@@ -34,17 +56,38 @@ class Provider:
             fail(413, "ai_input_too_large", "AI 입력이 너무 큽니다. 문서를 나누어 주세요.")
         try:
             with httpx.Client(timeout=httpx.Timeout(120, connect=5), trust_env=False) as client:
-                response = client.post(self.config.ollama_url.rstrip("/") + "/api/chat", json={
-                    "model": self.config.ollama_model,
+                response = client.post("https://api.openai.com/v1/responses", headers={
+                    "Authorization": "Bearer " + self.config.openai_api_key,
+                }, json={
+                    "model": self.config.openai_model,
                     "stream": False,
-                    "format": schema.model_json_schema(),
-                    "options": {"temperature": 0, "num_ctx": 32768},
-                    "messages": [{"role": "system", "content": SYSTEM + "\n작업: " + task}, {"role": "user", "content": text}],
+                    "store": False,
+                    "max_output_tokens": self.config.openai_max_output_tokens,
+                    "text": {"format": {"type": "json_schema", "name": schema.__name__, "strict": True, "schema": strict_schema(schema)}},
+                    "input": [{"role": "system", "content": SYSTEM + "\n작업: " + task}, {"role": "user", "content": text}],
                 })
                 response.raise_for_status()
-                return schema.model_validate_json(response.json()["message"]["content"])
-        except (httpx.HTTPError, KeyError, ValueError, ValidationError):
-            fail(502, "ai_provider_error", "AI 응답을 받거나 검증하지 못했습니다. Ollama 연결·모델을 확인하고 다시 시도하세요. 문서는 변경되지 않았습니다.")
+                result = response.json()
+                if result["status"] != "completed":
+                    fail(502, "ai_incomplete_response", "GPT 응답이 완료되지 않았습니다. 출력 한도와 모델 설정을 확인하세요. 문서는 변경되지 않았습니다.")
+                chunks = []
+                for item in result["output"]:
+                    if item.get("type") != "message":
+                        continue
+                    for part in item["content"]:
+                        if part.get("type") == "refusal":
+                            fail(502, "ai_refusal", "GPT가 이 요청의 처리를 거절했습니다. 원문을 직접 검토·편집하세요. 문서는 변경되지 않았습니다.")
+                        if part.get("type") == "output_text":
+                            chunks.append(part["text"])
+                return schema.model_validate_json("".join(chunks))
+        except httpx.TimeoutException:
+            fail(504, "ai_timeout", "GPT 응답 시간이 초과되었습니다. 문서는 변경되지 않았습니다.")
+        except httpx.HTTPStatusError as error:
+            if error.response.status_code == 429:
+                fail(503, "ai_rate_limited", "OpenAI API 사용 한도 또는 요청 제한에 도달했습니다. API 결제·한도를 확인한 뒤 다시 시도하세요.")
+            fail(502, "ai_provider_error", "OpenAI API 호출에 실패했습니다. 서버의 API 키·모델·권한을 확인하세요. 문서는 변경되지 않았습니다.")
+        except (httpx.HTTPError, KeyError, TypeError, AttributeError, ValueError, ValidationError):
+            fail(502, "ai_provider_error", "GPT 응답을 받거나 검증하지 못했습니다. 문서는 변경되지 않았습니다.")
 
     def analyze(self, doc):
         if self.name != "demo":
@@ -92,4 +135,4 @@ class Provider:
             sentences = [s.strip() for s in re.split(r"(?<=[.!?。])\s+|\n+", current.text) if s.strip()]
             return [current.model_copy(update={"text": s}) for s in sentences[:20]] if len(sentences) <= 20 else [current]
         # No invented term meanings or pretend simplification without a model.
-        fail(503, "ai_not_configured", "이 작업에는 실제 AI가 필요합니다. AI_PROVIDER=ollama를 설정하거나 직접 편집하세요. 데모는 구조·초안 복사, 문장 나누기, 그림 교체만 지원합니다.")
+        fail(503, "ai_not_configured", "이 작업에는 실제 AI가 필요합니다. AI_PROVIDER=openai와 OPENAI_API_KEY, OPENAI_MODEL을 설정하거나 직접 편집하세요. 데모는 구조·초안 복사, 문장 나누기, 그림 교체만 지원합니다.")

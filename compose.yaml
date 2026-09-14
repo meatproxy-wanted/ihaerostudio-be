@@ -6,14 +6,13 @@ services:
     environment:
       APP_ENV: production
       API_KEYS: ${API_KEYS:?Set API_KEYS in .env first}
-      AI_PROVIDER: ${AI_PROVIDER:-demo}
-      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-}
+      AI_PROVIDER: ${AI_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      OPENAI_MAX_OUTPUT_TOKENS: ${OPENAI_MAX_OUTPUT_TOKENS:-16384}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
     volumes:
       - studio-data:/service/data
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 volumes:
   studio-data:
