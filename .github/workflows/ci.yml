@@ -31,3 +31,8 @@ jobs:
           git diff --exit-code docs/openapi.json
       - name: Build application image
         run: docker build -t ihaerostudio-be:ci .
+      - name: Validate deployment configuration
+        run: |
+          cp deploy/.env.example deploy/.env
+          docker compose --env-file deploy/.env.example -f deploy/compose.yaml config --quiet
+          docker run --rm -e API_DOMAIN=localhost -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
