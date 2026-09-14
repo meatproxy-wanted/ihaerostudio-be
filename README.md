@@ -24,6 +24,11 @@ AI_PROVIDER=demo CORS_ORIGINS=http://127.0.0.1:3100,http://localhost:3100 \
 - OpenAPI: [http://127.0.0.1:8100/openapi.json](http://127.0.0.1:8100/openapi.json)
 - 상태 확인: [http://127.0.0.1:8100/health](http://127.0.0.1:8100/health)
 
+Swagger에는 31개 동작별 호출 시점·요청 방법·저장 영향·다음 동작과 성공/오류 예시가 포함돼 있습니다.
+`Schema` 탭에서 각 필드 의미를, `Examples`에서 빈 결과·공개 해제·오류별 응답을 확인할 수 있습니다.
+문서 설명은 `app/studio_docs.py`, 필드·응답 스키마는 `app/studio_doc_schemas.py`, 가상 예시는
+`app/studio_doc_examples.py`에서 관리하며 실제 엔드포인트나 AI 출력 스키마를 변경하지 않습니다.
+
 Swagger의 Authorize에는 로컬 개발 토큰 `dev-only-change-me`를 입력합니다.
 이 토큰은 백엔드 작성자 식별용이며 별도 로그인 화면이나 로그인 API는 없습니다.
 공개 읽기에는 인증이 필요하지 않습니다. 운영 토큰은 `API_KEYS`로 설정합니다.

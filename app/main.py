@@ -13,6 +13,7 @@ from .models import ErrorResponse
 from .providers import Provider
 from .store import Store, fail
 from .studio_api import register_studio
+from .studio_docs import API_DESCRIPTION, install_docs
 
 
 class UploadLimitMiddleware:
@@ -49,18 +50,8 @@ class UploadLimitMiddleware:
 def create_app(config: Config | None = None):
     config = config or Config()
     store, provider = Store(config.db_path), Provider(config)
-    api = FastAPI(title="이해로 스튜디오 API", version="0.3.0", description="""
-현재 프론트엔드의 ApiClient에 대응하는 API입니다. 모든 업무 경로는 `/api/studio`를 사용합니다.
-
-텍스트/PDF 업로드·분석 → 사건 구조 확인 → 초안 생성·편집 → 검토 → 게시본·공개 읽기.
-초안 생성은 `{document, project}`를 반환합니다. 저장 시 `saveRevision` 또는 구조의 `revision`을 전달합니다.
-
-Authorize에는 백엔드의 작성자 Bearer 토큰을 입력합니다. 로컬 기본값은 `dev-only-change-me`입니다.
-공개 읽기(`/reader/{project_id}`)에는 인증이 필요하지 않습니다. 별도 로그인 API는 없습니다.
-
-`AI_PROVIDER=demo`에서는 실제 입력 원문을 복사해 응답합니다. 실제 분석·쉬운 글 생성은 서버의 AI 설정이 필요합니다.
-그림 후보는 업로드한 그림이며 자동 그림 생성은 아직 연결되지 않았습니다. PDF 출력은 프론트의 인쇄 화면을 사용합니다.
-""", responses={
+    api = FastAPI(title="이해로 스튜디오 API", version="0.3.0", description=API_DESCRIPTION,
+        swagger_ui_parameters={"filter": True, "displayRequestDuration": True}, responses={
         401: {"model": ErrorResponse}, 404: {"model": ErrorResponse},
         409: {"model": ErrorResponse},
         413: {"model": ErrorResponse, "description": "Content Too Large"},
@@ -94,6 +85,7 @@ Authorize에는 백엔드의 작성자 Bearer 토큰을 입력합니다. 로컬 
         return {"status": "ok", "ai_provider": config.provider, "environment": config.environment}
 
     register_studio(api, config, store, provider, owner)
+    install_docs(api)
     return api
 
 
