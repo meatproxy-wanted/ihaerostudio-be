@@ -1,7 +1,7 @@
 """The camelCase wire contract used by ihaerostudio-fe/lib/domain.
 
-Keep this contract separate from the original /api/v1 document API: a FE card
-has multiple independently verified sentences and cannot be flattened losslessly.
+A frontend card contains multiple independently verified sentences. Preserve
+that structure in requests and responses.
 """
 from typing import Annotated, Literal
 
