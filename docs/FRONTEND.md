@@ -42,9 +42,15 @@ FE의 원문 근거 오프셋은 JavaScript UTF-16 코드 단위입니다. 이�
 
 ## 현재 그림·출력 동작
 
-FE 그림 후보는 **이 자료에 이미 업로드한 그림**입니다. PNG/JPEG/WebP 및 제한된 안전한 SVG를 정제하여 저장합니다.
-초안의 자동 그림 생성은 아직 연결하지 않았습니다. FE의 PDF 저장은 기존 `/print` 화면과
-브라우저 인쇄를 사용하며, 별도 백엔드 PDF 출력 API는 제공하지 않습니다.
+`POST /projects/{id}/assist/images`는 `{cardId}`를 받아 `{candidates:[{src,alt,meaning}]}`를 반환합니다.
+`AI_PROVIDER=openai`와 OpenAI·Comfy 키가 설정되면 해당 카드의 그림 1장을 생성하고 업로드한 그림과 함께 후보로 제공합니다.
+초안 생성은 글을 만들고, 그림은 FE의 **그림 후보 보기**에서 생성합니다. 선택한 후보를 적용해야 문서에 저장됩니다.
+동일 내용은 저장된 그림을 재사용하며, 카드 내용이 바뀌면 새 그림을 생성합니다.
+대기 시간 초과는 `503 image_in_progress`이고 기존 FE 다시 시도로 같은 작업을 이어서 확인합니다.
+접수 불확실·실행 실패는 자동 유료 재생성을 하지 않습니다. 자세한 처리 방식은 README를 참고합니다.
+
+PNG/JPEG/WebP 및 제한된 안전한 SVG 업로드를 정제해 저장합니다. 생성 결과는 PNG data URI로 보관하므로
+Comfy 서명 URL이 만료돼도 표시됩니다. FE의 PDF 저장은 기존 `/print` 화면과 브라우저 인쇄를 사용합니다.
 
 FE의 기존 제한에 맞춰 PDF는 20MB, 그림 파일은 2MB입니다. 자료의 정제 그림 전체는 base64 기준
 12MB까지 보관합니다. 추후 Vercel 프록시로 연결할 경우 플랫폼 요청 한도에 유의하고, 큰 파일은
@@ -59,7 +65,7 @@ Docker Compose가 설치된 Linux 서버와 해당 서버를 가리키는 DNS가
 git clone git@github.com:meatproxy-wanted/ihaerostudio-be.git
 cd ihaerostudio-be/deploy
 cp .env.example .env
-# .env에 API_DOMAIN, 랜덤 API_KEYS, OPENAI_API_KEY, OPENAI_MODEL 입력
+# .env에 API_DOMAIN, 랜덤 API_KEYS, OPENAI_API_KEY, OPENAI_MODEL, COMFY_CLOUD_API_KEY 입력
 chmod 600 .env
 docker compose up -d --build --wait
 curl --fail https://YOUR_API_DOMAIN/health

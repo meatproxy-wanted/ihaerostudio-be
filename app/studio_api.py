@@ -13,10 +13,11 @@ from . import studio_provider
 from .models import uid
 from .sources import MAX_PDF_BYTES, extract_pdf, source_from_pages
 from .store import fail
-from .studio_domain import (cards, invalidate_review, reader_content, require_document, review_items,
+from .studio_domain import (invalidate_review, reader_content, require_document, review_items,
                             sentences, structure_content, summarize_document, sync_review, timestamp, validate_document, validate_structure)
 from .studio_store import StudioStore
 from .studio_images import MAX_UPLOAD, cleaned_upload
+from .studio_generation import StudioGeneration
 
 SAMPLE_TEXT = """사건: 데모용 가상 임대차보증금 반환 사건. 실제 사건이나 법원의 판결이 아닙니다.
 
@@ -36,6 +37,8 @@ SAMPLE_TEXT = """사건: 데모용 가상 임대차보증금 반환 사건. 실�
 def register_studio(api, config, base_store, provider, owner):
     store = StudioStore(base_store)
     api.state.studio = store
+    generation = StudioGeneration(store, config, provider)
+    api.state.studio_generation = generation
     router = APIRouter(prefix="/api/studio", tags=["FE 연동"])
     Owner = Annotated[str, Depends(owner)]
 
@@ -241,10 +244,7 @@ def register_studio(api, config, base_store, provider, owner):
 
     @router.post("/projects/{project_id}/assist/images")
     def image_candidates(project_id: str, body: wire.ImageInput, maker: Owner):
-        state = assist_state(project_id, maker)
-        if not any(c["id"] == body.cardId for c in cards(state["document"])):
-            fail(404, "not_found", "카드를 찾을 수 없어요.")
-        return {"candidates": [{k: image[k] for k in ("src", "alt", "meaning")} for image in state["assets"]]}
+        return generation.candidates(project_id, maker, body.cardId)
 
     @router.post("/projects/{project_id}/assist/upload-image")
     async def upload_image(project_id: str, maker: Owner, file: Annotated[UploadFile, File()],

@@ -75,7 +75,7 @@ def validate_document(document, state):
     allowed_sources = {image["src"] for image in state["assets"]}
     for image in document["images"]:
         if image["src"] not in allowed_sources:
-            fail(422, "invalid_image", "이 자료에 업로드한 그림만 연결할 수 있어요.")
+            fail(422, "invalid_image", "이 자료에서 생성하거나 업로드한 그림만 연결할 수 있어요.")
     for card in all_cards:
         if card["partyId"] is not None and card["partyId"] not in names:
             fail(422, "invalid_party", "카드의 당사자 이름이 없어요.")

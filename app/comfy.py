@@ -153,7 +153,9 @@ class ComfyCloud:
                 parsed = urlsplit(url)
                 if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
                     raise ValueError("output url")
-                if not item["content_type"].startswith(media_type + "/"):
+                # Cloud may leave MIME/size unset until blob metadata is hydrated.
+                # The caller must validate the downloaded bytes before using them.
+                if item["content_type"] and not item["content_type"].startswith(media_type + "/"):
                     raise ValueError("video content type")
                 outputs.append(VideoOutput(asset_id=item["id"], name=item["name"], content_type=item["content_type"],
                                            size_bytes=item["size_bytes"], url=url, url_expires_at=item["url_expires_at"]))
