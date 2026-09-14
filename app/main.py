@@ -383,6 +383,8 @@ COMFY_CLOUD_API_KEY는 서버에만 등록합니다. jobs 요청은 외부 전�
 
     register_video_routes(api, owner)
     register_image_routes(api, owner)
+    from .studio_api import register_studio
+    register_studio(api, config, store, provider, owner)
     return api
 
 
