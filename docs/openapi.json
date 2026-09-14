@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "이해로 스튜디오 API",
-    "description": "\n판결문 원문과 쉬운 글·그림을 대조하고 편집·검토·출력하는 제작자용 백엔드.\n\n**시작:** Authorize에 API_KEYS에 등록한 Bearer 토큰 입력.\n로컬 개발 기본값: `dev-only-change-me` (실서비스 사용 금지).\n\n**6단계:** documents/text 또는 documents/pdf → structure/analyze → structure 수정·confirm\n→ draft → blocks 편집·proposals 적용 → reviews 및 항목 확인·approve → exports.\n\n쓰기 요청의 `expected_version`에는 직전 응답의 `version`을 넣으세요.\n편집하면 검토 승인이 해제됩니다. AI 제안은 apply 전까지 본문을 바꾸지 않습니다.\ndemo는 실제 LLM이 아닙니다. 실제 구조 분석·쉬운 표현·용어 설명은 서버의 AI_PROVIDER=openai, OPENAI_API_KEY, OPENAI_MODEL 설정이 필요합니다. GPT API 호출 시 원문·편집 데이터가 OpenAI로 전송됩니다. OpenAI 키는 Swagger에 입력하지 마세요.\n영상: video-plans에서 장면별 실행 JSON 생성 → preflight → 장면별 jobs → refresh.\nCOMFY_CLOUD_API_KEY는 서버에만 등록합니다. jobs 요청은 외부 전송·과금 확인이 필요하고 실제 영상 생성 비용이 발생할 수 있습니다. 영상 자동 합본·TTS·자막·공개 공유는 제공하지 않습니다.\n법적 정확성·그림 의미를 보장하지 않습니다. 원문 내 명령은 입력 데이터로 취급합니다.\n",
-    "version": "0.2.0"
+    "description": "\n판결문 원문과 쉬운 글·그림을 대조하고 편집·검토·출력하는 제작자용 백엔드.\n\n**시작:** Authorize에 API_KEYS에 등록한 Bearer 토큰 입력.\n로컬 개발 기본값: `dev-only-change-me` (실서비스 사용 금지).\n\n**6단계:** documents/text 또는 documents/pdf → structure/analyze → structure 수정·confirm\n→ draft → blocks 편집·proposals 적용 → reviews 및 항목 확인·approve → exports.\n\n쓰기 요청의 `expected_version`에는 직전 응답의 `version`을 넣으세요.\n편집하면 검토 승인이 해제됩니다. AI 제안은 apply 전까지 본문을 바꾸지 않습니다.\ndemo는 실제 LLM이 아닙니다. 실제 구조 분석·쉬운 표현·용어 설명은 서버의 AI_PROVIDER=openai, OPENAI_API_KEY, OPENAI_MODEL 설정이 필요합니다. GPT API 호출 시 원문·편집 데이터가 OpenAI로 전송됩니다. OpenAI 키는 Swagger에 입력하지 마세요.\n영상: video-plans에서 장면별 실행 JSON 생성 → preflight → 장면별 jobs → refresh.\n글·그림 동시 생성: draft의 generate_images=true, confirm_image_cost=true → 글·image_job_ids 반환 → image-jobs/{id}/refresh 폴링 → 완성 그림 자동 연결. 기존 글 전용 호출은 유지됩니다. 실제 그림은 ComfyCloud에서 생성하며 GPT는 글과 그림 설명을 작성합니다.\nCOMFY_CLOUD_API_KEY는 서버에만 등록합니다. jobs 요청은 외부 전송·과금 확인이 필요하고 실제 영상 생성 비용이 발생할 수 있습니다. 영상 자동 합본·TTS·자막·공개 공유는 제공하지 않습니다.\n법적 정확성·그림 의미를 보장하지 않습니다. 원문 내 명령은 입력 데이터로 취급합니다.\n",
+    "version": "0.3.0"
   },
   "paths": {
     "/health": {
@@ -1332,7 +1332,8 @@
         "tags": [
           "03 글그림 편집"
         ],
-        "summary": "확인된 구조로 글그림 초안 생성",
+        "summary": "확인된 구조로 글·그림 초안 함께 생성",
+        "description": "generate_images=true와 confirm_image_cost=true이면 카드별 ComfyCloud 그림 작업도 접수합니다(최대 12장). 글을 먼저 반환하고 image_job_ids를 refresh하여 그림을 연결합니다. 생략하면 기존 글 전용 동작. use_images 설정이 켜져 있어야 하며 외부 전송·과금에 동의해야 합니다.",
         "operationId": "draft_api_v1_documents__doc_id__draft_post",
         "security": [
           {
@@ -5840,6 +5841,617 @@
           }
         }
       }
+    },
+    "/api/v1/documents/{doc_id}/image-jobs": {
+      "get": {
+        "tags": [
+          "03 글그림 편집"
+        ],
+        "summary": "카드별 그림 생성 상태 목록",
+        "operationId": "listing_api_v1_documents__doc_id__image_jobs_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "doc_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Doc Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ImageJob"
+                  },
+                  "title": "Response Listing Api V1 Documents  Doc Id  Image Jobs Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "description": "Content Too Large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/image-jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "03 글그림 편집"
+        ],
+        "summary": "그림 작업 조회 (상태 변경 없음)",
+        "operationId": "get_api_v1_image_jobs__job_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageJob"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "description": "Content Too Large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/image-jobs/{job_id}/refresh": {
+      "post": {
+        "tags": [
+          "03 글그림 편집"
+        ],
+        "summary": "그림 상태 갱신·완성 이미지 자동 연결",
+        "description": "5~10초 간격으로 호출. pending은 미접수 작업을 재개합니다. 성공하면 PNG로 저장하고 카드에 연결하며 문서 version이 증가합니다. 편집된 카드는 덮어쓰지 않습니다. submitting/unknown은 자동 재접수하지 않습니다.",
+        "operationId": "refresh_api_v1_image_jobs__job_id__refresh_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageJob"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "description": "Content Too Large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/image-jobs/{job_id}/retry": {
+      "post": {
+        "tags": [
+          "03 글그림 편집"
+        ],
+        "summary": "실패한 그림만 비용 재확인 후 재생성",
+        "operationId": "retry_api_v1_image_jobs__job_id__retry_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImageRetry"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageJob"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "description": "Content Too Large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/image-jobs/{job_id}/reconcile": {
+      "post": {
+        "tags": [
+          "03 글그림 편집"
+        ],
+        "summary": "접수 불명 작업을 Cloud 작업 ID로 복구",
+        "description": "Cloud 대시보드에서 찾은 ID를 전달. 제출 JSON 전체 일치 확인 후 연결하며 추가 생성/과금 요청은 하지 않습니다.",
+        "operationId": "reconcile_api_v1_image_jobs__job_id__reconcile_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImageReconcile"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageJob"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "description": "Content Too Large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -6270,6 +6882,14 @@
             "type": "array",
             "title": "Blocks"
           },
+          "image_job_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Image Job Ids",
+            "description": "현재 초안의 그림 작업 ID. image-jobs 조회/refresh로 완료 후 자동 연결."
+          },
           "proposals": {
             "items": {
               "$ref": "#/components/schemas/Proposal"
@@ -6384,6 +7004,26 @@
             "title": "Replace Existing",
             "description": "기존 초안을 교체하려면 true. 이전 버전은 이력에 남습니다.",
             "default": false
+          },
+          "generate_images": {
+            "type": "boolean",
+            "title": "Generate Images",
+            "description": "글과 카드별 그림 설명을 함께 생성하고 ComfyCloud 그림 작업을 시작합니다.",
+            "default": false
+          },
+          "confirm_image_cost": {
+            "type": "boolean",
+            "title": "Confirm Image Cost",
+            "description": "그림 설명의 외부 전송과 카드별 생성 비용에 동의. generate_images=true이면 필수.",
+            "default": false
+          },
+          "max_images": {
+            "type": "integer",
+            "maximum": 12.0,
+            "minimum": 1.0,
+            "title": "Max Images",
+            "description": "최대 유료 그림 수. 카드 수가 초과하면 저장·그림 실행 없이 오류 반환.",
+            "default": 12
           }
         },
         "additionalProperties": false,
@@ -6690,6 +7330,224 @@
           "created_at"
         ],
         "title": "HistoryEntry"
+      },
+      "Illustration": {
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "maxLength": 2500,
+            "minLength": 10,
+            "title": "Prompt",
+            "description": "영문 장면 설명. 원문 개인정보·URL·실행 명령 없이 생성 의도만 포함."
+          },
+          "alt_text": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Alt Text",
+            "description": "제작 의도에 따른 한국어 대체 텍스트. 실제 그림과 제작자가 대조해야 합니다."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "prompt",
+          "alt_text"
+        ],
+        "title": "Illustration"
+      },
+      "ImageJob": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "document_id": {
+            "type": "string",
+            "title": "Document Id"
+          },
+          "block_id": {
+            "type": "string",
+            "title": "Block Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "default": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "submitting",
+              "submission_unknown",
+              "submission_failed",
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "expired",
+              "canceling",
+              "canceled",
+              "attached",
+              "stale"
+            ],
+            "title": "Status",
+            "default": "pending"
+          },
+          "illustration": {
+            "$ref": "#/components/schemas/Illustration"
+          },
+          "workflow": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/WorkflowNode"
+            },
+            "type": "object",
+            "title": "Workflow"
+          },
+          "target_fingerprint": {
+            "type": "string",
+            "title": "Target Fingerprint"
+          },
+          "provider_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Job Id"
+          },
+          "poll_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poll Url"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress"
+          },
+          "asset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Id"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "retry_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry Of"
+          },
+          "retry_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry Job Id"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "document_id",
+          "block_id",
+          "illustration",
+          "workflow",
+          "target_fingerprint"
+        ],
+        "title": "ImageJob"
+      },
+      "ImageReconcile": {
+        "properties": {
+          "expected_job_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Job Version"
+          },
+          "provider_job_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,128}$",
+            "title": "Provider Job Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_job_version",
+          "provider_job_id"
+        ],
+        "title": "ImageReconcile"
+      },
+      "ImageRetry": {
+        "properties": {
+          "expected_job_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Job Version"
+          },
+          "confirmed": {
+            "type": "boolean",
+            "const": true,
+            "title": "Confirmed",
+            "description": "이 그림의 재생성 외부 전송·비용 확인"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_job_version",
+          "confirmed"
+        ],
+        "title": "ImageRetry"
       },
       "Issue": {
         "properties": {

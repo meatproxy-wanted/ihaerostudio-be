@@ -35,7 +35,7 @@ def compile_scene(scene: VideoScene, aspect_ratio: str, seed: int, prefix: str):
                          actual_duration_seconds=frames / 24, workflow=graph)
 
 
-def validate_graph(graph):
+def validate_graph(graph, allowed=ALLOWED):
     visited, active = set(), set()
     def visit(key):
         if key in active or key not in graph:
@@ -44,7 +44,7 @@ def validate_graph(graph):
             return
         active.add(key)
         node = graph[key]
-        if node.class_type not in ALLOWED:
+        if node.class_type not in allowed:
             fail(422, "invalid_video_graph", "허용되지 않은 영상 노드입니다.")
         for value in node.inputs.values():
             if isinstance(value, list):

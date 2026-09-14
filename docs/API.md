@@ -40,6 +40,18 @@
 
 ## ③ 쉬운 글·그림 편집
 
+**글을 만들 때 그림도 생성:** 기존 `POST /documents/{id}/draft`에 다음처럼 전달합니다.
+
+```json
+{"expected_version":3,"generate_images":true,"confirm_image_cost":true,"max_images":12}
+```
+
+글과 카드별 `image_job_ids`를 먼저 반환합니다. `GET /documents/{id}/image-jobs`로 목록을 조회하고
+`POST /image-jobs/{jobId}/refresh`를 5~10초 간격으로 호출하면 완성 이미지를 카드에 자동 연결합니다.
+연결 후 `GET /documents/{id}`로 최신 `version`을 가져와 편집하세요. 실패한 그림만 재생성할 수 있고
+제작자가 수정한 카드를 덮어쓰지 않습니다. 자세한 화면 매핑·복구·설정은 [글·그림 생성 가이드](IMAGES.md).
+`generate_images:false` 또는 생략은 기존 글 전용 동작입니다.
+
 `GET /documents/{id}`의 `blocks`가 중앙 편집 카드입니다. 카드 클릭 시 `GET /documents/{id}/blocks/{blockId}/sources`를 호출하면 원문 페이지 번호와 `page_start/page_end/quote`를 반환합니다. PDF 시각 좌표가 아닌 추출 텍스트 위치입니다.
 
 직접 편집은 `PUT /documents/{id}/blocks/{blockId}`:

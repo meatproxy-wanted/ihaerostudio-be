@@ -11,6 +11,7 @@ services:
       OPENAI_MODEL: ${OPENAI_MODEL:-}
       OPENAI_MAX_OUTPUT_TOKENS: ${OPENAI_MAX_OUTPUT_TOKENS:-16384}
       COMFY_CLOUD_API_KEY: ${COMFY_CLOUD_API_KEY:-}
+      COMFY_ASSET_ALLOWED_HOSTS: ${COMFY_ASSET_ALLOWED_HOSTS:-cloud.comfy.org}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
     volumes:
       - studio-data:/service/data

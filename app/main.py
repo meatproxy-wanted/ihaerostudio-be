@@ -4,7 +4,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, File, Form, Query, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -13,6 +13,7 @@ from starlette.concurrency import run_in_threadpool
 
 from .config import Config
 from .video_api import register_video_routes
+from .image_api import register_image_routes
 from .domain import (DISCLAIMER, block_for, changed, evidence_locations, expect, reader_view,
                      require_reviewed, run_review, validate_block, validate_structure)
 from .models import (Asset, Block, BlockContent, BlockCreate, BlockUpdate, Confirmation, Document, DocumentList,
@@ -71,7 +72,7 @@ class UploadLimitMiddleware:
 def create_app(config: Config | None = None):
     config = config or Config()
     store, provider = Store(config.db_path), Provider(config)
-    api = FastAPI(title="이해로 스튜디오 API", version="0.2.0", description="""
+    api = FastAPI(title="이해로 스튜디오 API", version="0.3.0", description="""
 판결문 원문과 쉬운 글·그림을 대조하고 편집·검토·출력하는 제작자용 백엔드.
 
 **시작:** Authorize에 API_KEYS에 등록한 Bearer 토큰 입력.
@@ -84,6 +85,7 @@ def create_app(config: Config | None = None):
 편집하면 검토 승인이 해제됩니다. AI 제안은 apply 전까지 본문을 바꾸지 않습니다.
 demo는 실제 LLM이 아닙니다. 실제 구조 분석·쉬운 표현·용어 설명은 서버의 AI_PROVIDER=openai, OPENAI_API_KEY, OPENAI_MODEL 설정이 필요합니다. GPT API 호출 시 원문·편집 데이터가 OpenAI로 전송됩니다. OpenAI 키는 Swagger에 입력하지 마세요.
 영상: video-plans에서 장면별 실행 JSON 생성 → preflight → 장면별 jobs → refresh.
+글·그림 동시 생성: draft의 generate_images=true, confirm_image_cost=true → 글·image_job_ids 반환 → image-jobs/{id}/refresh 폴링 → 완성 그림 자동 연결. 기존 글 전용 호출은 유지됩니다. 실제 그림은 ComfyCloud에서 생성하며 GPT는 글과 그림 설명을 작성합니다.
 COMFY_CLOUD_API_KEY는 서버에만 등록합니다. jobs 요청은 외부 전송·과금 확인이 필요하고 실제 영상 생성 비용이 발생할 수 있습니다. 영상 자동 합본·TTS·자막·공개 공유는 제공하지 않습니다.
 법적 정확성·그림 의미를 보장하지 않습니다. 원문 내 명령은 입력 데이터로 취급합니다.
 """, openapi_tags=TAGS, responses={
@@ -189,17 +191,21 @@ COMFY_CLOUD_API_KEY는 서버에만 등록합니다. jobs 요청은 외부 전�
         doc.status = "editing" if doc.blocks else "structure_confirmed"
         return store.save(doc, maker, body.expected_version, "structure_confirmed: " + body.note)
 
-    @api.post("/api/v1/documents/{doc_id}/draft", response_model=Document, tags=[TAGS[2]["name"]], summary="확인된 구조로 글그림 초안 생성")
-    def draft(doc_id: str, body: DraftInput, maker: Owner):
+    @api.post("/api/v1/documents/{doc_id}/draft", response_model=Document, tags=[TAGS[2]["name"]], summary="확인된 구조로 글·그림 초안 함께 생성", description="generate_images=true와 confirm_image_cost=true이면 카드별 ComfyCloud 그림 작업도 접수합니다(최대 12장). 글을 먼저 반환하고 image_job_ids를 refresh하여 그림을 연결합니다. 생략하면 기존 글 전용 동작. use_images 설정이 켜져 있어야 하며 외부 전송·과금에 동의해야 합니다.")
+    def draft(doc_id: str, body: DraftInput, background: BackgroundTasks, maker: Owner):
         doc = store.get(doc_id, maker); expect(doc, body.expected_version)
         if not doc.structure_confirmed:
             fail(409, "structure_confirmation_required", "먼저 사건 구조를 원문과 대조하고 확인해주세요.")
         if doc.blocks and not body.replace_existing:
             fail(409, "draft_exists", "기존 초안을 교체하려면 replace_existing=true가 필요합니다.")
+        if body.generate_images:
+            result = api.state.images.prepare(doc, body, maker)
+            background.add_task(api.state.images.start_many, result.image_job_ids, maker)
+            return result
         blocks = provider.draft(doc)
         for b in blocks:
             validate_block(doc, b, store)
-        doc.blocks = [Block(**b.model_dump()) for b in blocks]; changed(doc)
+        doc.blocks = [Block(**b.model_dump()) for b in blocks]; doc.image_job_ids = []; changed(doc)
         return store.save(doc, maker, body.expected_version, "draft_generated")
 
     @api.get("/api/v1/documents/{doc_id}/blocks/{block_id}/sources", response_model=list[EvidenceLocation], tags=[TAGS[2]["name"]], summary="선택 문장의 원문 강조 위치")
@@ -376,6 +382,7 @@ COMFY_CLOUD_API_KEY는 서버에만 등록합니다. jobs 요청은 외부 전�
         return store.snapshot(doc_id, maker, version)
 
     register_video_routes(api, owner)
+    register_image_routes(api, owner)
     return api
 
 

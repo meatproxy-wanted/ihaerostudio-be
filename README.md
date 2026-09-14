@@ -53,7 +53,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/documents/text \
 | --- | --- |
 | ① 업로드 | PDF/텍스트, 독자·성인 존중 문체·호칭·그림 설정, 원본 보관, 페이지·문단 추출 |
 | ② 사건 구조 | 당사자, 당사자별 주장, 법원의 판단·결정, 원문 근거, 직접 수정·확인 |
-| ③ 편집 | 카드 추가/삭제/순서 변경/직접 편집, 근거 위치 조회, AI 제안 before/after, 적용/거절, 문장 나누기, 용어 설명, 이미지 업로드·교체 |
+| ③ 편집 | 글·카드별 그림 동시 생성, 그림 자동 연결·실패 재시도, 카드 추가/삭제/순서 변경/직접 편집, 근거 위치 조회, AI 제안 before/after, 적용/거절, 문장 나누기, 용어 설명, 이미지 업로드·교체 |
 | ④ 검토 | 금액, 분류, 지급 명령/지급 완료, 용어, 긴 문장, 원문 누락·그림 확인 항목, 제작자 확인 메모·최종 승인 |
 | ⑤ 미리보기 | 독자용 JSON/HTML, A4 한글 PDF, 내부 근거·검토 정보 숨김 |
 | ⑥ 내보내기 | 검토 완료 버전 PDF·HTML 스냅샷, 선택적 공유 링크, 만료·공유 해제, 설명자료 고지 |
@@ -67,6 +67,15 @@ GPT가 시나리오와 선택한 설명 카드를 장면으로 나누고, 서버
 `COMFY_CLOUD_API_KEY`를 서버 Secret에 등록하세요. Swagger의 **⑦ 시나리오·영상 생성**에서 사용할 수 있습니다. 1차는 Wan 2.2 5B 기반 장면별 무음 클립이며 합본/TTS/자막/이미지 참조는 포함하지 않습니다. 실제 Cloud 키가 없을 때도 계획 JSON은 만들 수 있지만 영상 실행을 흉내 내지는 않습니다. GPU 실행 전 노드/모델 가용성을 확인합니다.
 
 전체 사용법·입출력 예시·과금/개인정보 주의사항: [영상 API 가이드](docs/VIDEO.md).
+
+## 글과 그림을 함께 생성
+
+기존 `POST /api/v1/documents/{id}/draft`에 `generate_images:true`, `confirm_image_cost:true`를
+추가하면 GPT가 글과 그림 설명을 함께 작성하고 ComfyCloud 그림 작업을 자동 접수합니다.
+글과 `image_job_ids`를 먼저 반환합니다. 프런트엔드에서 작업별 `/refresh`를 5~10초 간격으로
+호출하면 완성 그림을 카드에 연결합니다. 편집된 카드는 덮어쓰지 않고 실패한 그림만 재시도할 수 있습니다.
+최대 12장, 기본 프리셋 FLUX Schnell. 실제 모델 가용성·GPU 실행은 계정 키로 확인해야 합니다.
+전체 요청 예시·화면 매핑·복구·서버 설정은 [글·그림 생성 API 가이드](docs/IMAGES.md)를 참고하세요.
 
 ## 실제 AI 연결: OpenAI GPT API
 
@@ -87,7 +96,7 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
 
 `OPENAI_API_KEY`는 **서버 전용 비밀값**입니다. 프런트엔드, Swagger Authorize, Git 저장소에 넣지 마세요. Swagger의 `API_KEYS` 제작자 토큰과는 별개입니다. 배포 서비스의 Secret 환경변수로 등록하세요. `AI_PROVIDER=openai`인데 키나 모델이 없으면 시작 단계에서 실패하며 데모로 조용히 전환하지 않습니다. API 키 없이 화면 흐름을 테스트할 때만 `AI_PROVIDER=demo`를 명시하세요.
 
-GPT 작업을 실행하면 원문·사건 구조·편집 대상 텍스트가 OpenAI로 전송됩니다. 민감정보가 있는 판결문은 전송 권한과 비식별화·보관 정책을 먼저 확인하세요. 요청에 `store:false`를 사용하지만 이것만으로 무보관(Zero Data Retention)을 보장하지는 않습니다. [OpenAI 데이터 관리 문서](https://developers.openai.com/api/docs/guides/your-data)를 확인하세요. 본 구현에는 자동 웹 검색, AI 도구 실행, 이미지 생성·그림 픽셀 의미 판독이 없습니다. 그림은 PNG/JPEG/WebP 업로드 후 교체합니다.
+GPT 작업을 실행하면 원문·사건 구조·편집 대상 텍스트가 OpenAI로 전송됩니다. 민감정보가 있는 판결문은 전송 권한과 비식별화·보관 정책을 먼저 확인하세요. 요청에 `store:false`를 사용하지만 이것만으로 무보관(Zero Data Retention)을 보장하지는 않습니다. [OpenAI 데이터 관리 문서](https://developers.openai.com/api/docs/guides/your-data)를 확인하세요. 자동 웹 검색과 그림 픽셀 의미 판독은 없습니다. 그림 생성은 GPT 이미지 API가 아닌 ComfyCloud를 사용하며 그림 설명이 외부로 전송됩니다. 기존 PNG/JPEG/WebP 업로드·교체도 지원합니다.
 
 시간 초과는 `504 ai_timeout`, API 한도/429는 `503 ai_rate_limited`, 거절·불완전 응답은 `502 ai_refusal` / `ai_incomplete_response`입니다. 실패 시 문서/버전은 변경하지 않고, 제공자 오류 원문이나 API 키는 클라이언트에 반환하지 않습니다. 자동 재시도는 하지 않습니다.
 
@@ -155,6 +164,10 @@ app/
   providers.py  데모와 OpenAI GPT Responses API 연동
   domain.py     근거 검증·검토 규칙·독자용 데이터
   render.py     한글 PDF·독자 HTML
+  image_api.py  글·그림 작업 원자 저장, 접수·상태·재시도·자동 연결
+  image_models.py / image_workflows.py  그림 스키마·제한된 실행 JSON
+  comfy.py      ComfyCloud v2 연동
+  video_*.py    장면 계획·영상 작업·저장·워크플로우
 docs/           OpenAPI JSON과 화면별 API 가이드
 examples/       가상 판결 입력
 scripts/        전체 흐름 데모·OpenAPI 내보내기

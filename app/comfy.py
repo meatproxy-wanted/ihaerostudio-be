@@ -55,7 +55,7 @@ class ComfyCloud:
 
     def require_key(self):
         if not self.config.comfy_api_key.strip():
-            fail(503, "comfy_not_configured", "서버의 COMFY_CLOUD_API_KEY를 설정하세요. 영상은 생성되지 않았습니다.")
+            fail(503, "comfy_not_configured", "서버의 COMFY_CLOUD_API_KEY를 설정하세요. 미디어는 생성되지 않았습니다.")
 
     def request(self, method, url, *, data=None, key=None):
         self.require_key()
@@ -90,8 +90,8 @@ class ComfyCloud:
         except (httpx.HTTPError, ValueError):
             raise ComfyFailure("comfy_connection_or_response_error", uncertain=True) from None
 
-    def preflight(self, graph):
-        validate_graph(graph)
+    def preflight(self, graph, *, allowed=None, preset="wan22-5b-t2v-v1"):
+        validate_graph(graph, allowed) if allowed is not None else validate_graph(graph)
         info = self.request("GET", ORIGIN + "/api/object_info")
         issues = []
         for key, node in graph.items():
@@ -131,12 +131,12 @@ class ComfyCloud:
                         issues.append(f"{node.class_type}.{name}: 지원하지 않는 동적 옵션입니다.")
                 else:
                     issues.append(f"{node.class_type}.{name}: 검증할 수 없는 입력 형식입니다.")
-        return VideoPreflight(compatible=not issues, preset="wan22-5b-t2v-v1", node_count=len(graph), issues=issues)
+        return VideoPreflight(compatible=not issues, preset=preset, node_count=len(graph), issues=issues)
 
     def submit(self, graph, key):
         return self.request("POST", ORIGIN + "/api/v2/jobs", data={"workflow": {k: n.model_dump() for k, n in graph.items()}}, key=key)
 
-    def parse_job(self, body, expected_id=None):
+    def parse_job(self, body, expected_id=None, *, media_type="video"):
         try:
             provider_id = body["id"]
             if not isinstance(provider_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", provider_id):
@@ -147,13 +147,13 @@ class ComfyCloud:
                 raise ValueError("status")
             outputs = []
             for item in body["outputs"]:
-                if item["type"] != "video":
+                if item["type"] != media_type:
                     continue
                 url = urljoin(ORIGIN, item["url"])
                 parsed = urlsplit(url)
                 if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
                     raise ValueError("output url")
-                if not item["content_type"].startswith("video/"):
+                if not item["content_type"].startswith(media_type + "/"):
                     raise ValueError("video content type")
                 outputs.append(VideoOutput(asset_id=item["id"], name=item["name"], content_type=item["content_type"],
                                            size_bytes=item["size_bytes"], url=url, url_expires_at=item["url_expires_at"]))

@@ -135,6 +135,9 @@ class Confirmation(RevisionInput):
 
 class DraftInput(RevisionInput):
     replace_existing: bool = Field(default=False, description="기존 초안을 교체하려면 true. 이전 버전은 이력에 남습니다.")
+    generate_images: bool = Field(default=False, description="글과 카드별 그림 설명을 함께 생성하고 ComfyCloud 그림 작업을 시작합니다.")
+    confirm_image_cost: bool = Field(default=False, description="그림 설명의 외부 전송과 카드별 생성 비용에 동의. generate_images=true이면 필수.")
+    max_images: int = Field(default=12, ge=1, le=12, description="최대 유료 그림 수. 카드 수가 초과하면 저장·그림 실행 없이 오류 반환.")
 
 
 class BlockUpdate(RevisionInput):
@@ -203,6 +206,7 @@ class Document(Model):
     structure: Structure | None = None
     structure_confirmed: bool = False
     blocks: list[Block] = Field(default_factory=list)
+    image_job_ids: list[str] = Field(default_factory=list, description="현재 초안의 그림 작업 ID. image-jobs 조회/refresh로 완료 후 자동 연결.")
     proposals: list[Proposal] = Field(default_factory=list)
     review: Review | None = None
     provider: str = "demo"
