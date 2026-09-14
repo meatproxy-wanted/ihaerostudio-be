@@ -11,6 +11,7 @@ class Config:
     openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""), repr=False)
     openai_model: str = field(default_factory=lambda: os.getenv("OPENAI_MODEL", ""))
     openai_max_output_tokens: int = field(default_factory=lambda: int(os.getenv("OPENAI_MAX_OUTPUT_TOKENS", "16384")))
+    comfy_api_key: str = field(default_factory=lambda: os.getenv("COMFY_CLOUD_API_KEY", ""), repr=False)
     font_path: str | None = field(default_factory=lambda: os.getenv("PDF_FONT_PATH"))
     cors_origins: list[str] = field(default_factory=lambda: os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(","))
     environment: str = field(default_factory=lambda: os.getenv("APP_ENV", "development"))

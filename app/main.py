@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from starlette.concurrency import run_in_threadpool
 
 from .config import Config
+from .video_api import register_video_routes
 from .domain import (DISCLAIMER, block_for, changed, evidence_locations, expect, reader_view,
                      require_reviewed, run_review, validate_block, validate_structure)
 from .models import (Asset, Block, BlockContent, BlockCreate, BlockUpdate, Confirmation, Document, DocumentList,
@@ -31,6 +32,7 @@ TAGS = [
     {"name": "04 검토", "description": "자동 확인 항목은 정확성을 보장하지 않습니다. 모든 항목을 제작자가 확인합니다."},
     {"name": "05 미리보기", "description": "편집 정보를 숨긴 독자용 JSON/HTML 및 검토 전 PDF."},
     {"name": "06 내보내기", "description": "현재 검토 완료 버전의 불변 PDF/독자 화면. 공유는 선택 사항이며 해제 가능합니다."},
+    {"name": "⑦ 시나리오·영상 생성", "description": "GPT 장면 계획 → 동적 워크플로우 → 제작자 확인 → ComfyCloud v2 작업. 장면별 무음 클립, 자동 합본/TTS 없음. 결과 영상은 제작자 전용이며 별도 의미 검토가 필요합니다."},
     {"name": "이력", "description": "편집·승인한 작성자와 전체 버전 스냅샷."},
 ]
 
@@ -69,7 +71,7 @@ class UploadLimitMiddleware:
 def create_app(config: Config | None = None):
     config = config or Config()
     store, provider = Store(config.db_path), Provider(config)
-    api = FastAPI(title="이해로 스튜디오 API", version="0.1.0", description="""
+    api = FastAPI(title="이해로 스튜디오 API", version="0.2.0", description="""
 판결문 원문과 쉬운 글·그림을 대조하고 편집·검토·출력하는 제작자용 백엔드.
 
 **시작:** Authorize에 API_KEYS에 등록한 Bearer 토큰 입력.
@@ -81,6 +83,8 @@ def create_app(config: Config | None = None):
 쓰기 요청의 `expected_version`에는 직전 응답의 `version`을 넣으세요.
 편집하면 검토 승인이 해제됩니다. AI 제안은 apply 전까지 본문을 바꾸지 않습니다.
 demo는 실제 LLM이 아닙니다. 실제 구조 분석·쉬운 표현·용어 설명은 서버의 AI_PROVIDER=openai, OPENAI_API_KEY, OPENAI_MODEL 설정이 필요합니다. GPT API 호출 시 원문·편집 데이터가 OpenAI로 전송됩니다. OpenAI 키는 Swagger에 입력하지 마세요.
+영상: video-plans에서 장면별 실행 JSON 생성 → preflight → 장면별 jobs → refresh.
+COMFY_CLOUD_API_KEY는 서버에만 등록합니다. jobs 요청은 외부 전송·과금 확인이 필요하고 실제 영상 생성 비용이 발생할 수 있습니다. 영상 자동 합본·TTS·자막·공개 공유는 제공하지 않습니다.
 법적 정확성·그림 의미를 보장하지 않습니다. 원문 내 명령은 입력 데이터로 취급합니다.
 """, openapi_tags=TAGS, responses={
         401: {"model": ErrorResponse}, 404: {"model": ErrorResponse},
@@ -371,6 +375,7 @@ demo는 실제 LLM이 아닙니다. 실제 구조 분석·쉬운 표현·용어 
     def history_snapshot(doc_id: str, version: int, maker: Owner):
         return store.snapshot(doc_id, maker, version)
 
+    register_video_routes(api, owner)
     return api
 
 
