@@ -1,12 +1,14 @@
 """Use the existing provider transport with the FE's richer structure/draft schema."""
 from . import studio_models as wire
 from .models import Document, Settings, uid
-from .studio_domain import utf16_length
+from .studio_domain import resolve_draft_quotes, resolve_structure_quotes, utf16_length
 
 STUDIO_INSTRUCTIONS = """
 이번 작업의 settings는 FE 형식입니다. tone=haeyo는 해요체, hamnida는 합니다체입니다.
 naming=initial은 A씨·B씨, role은 쉬운 역할, legal은 원고·피고와 쉬운 설명입니다.
-출력 스키마의 anchors에는 paragraphId와 해당 문단의 JavaScript UTF-16 start/end를 쓰세요.
+출력 스키마의 anchors에는 paragraphId와, 그 문단에서 글자 그대로 복사한 짧은 quote를 쓰세요.
+위치 숫자는 쓰지 않습니다. quote는 원문의 한 문장 또는 그 일부를 한 글자도 바꾸지 말고 옮기고,
+한 항목에 근거를 여러 개 붙일 수 있습니다. 원문에 없는 말을 quote에 넣지 마세요.
 원문의 개인정보를 추가하지 마세요. 구조의 주장과 판단 및 결정은 분리하고 근거를 붙이세요.
 누락된 정보는 빈 문자열, 불확실한 항목은 flags로 남기세요. 모든 id는 서로 달라야 합니다.
 """
@@ -32,8 +34,9 @@ def source_projection(project_id, source, is_pdf):
 
 def analyze(provider, source, projected, settings):
     if provider.name != "demo":
-        return provider.call(STUDIO_INSTRUCTIONS + "원문에서 사건 개요, 당사자, 핵심 사실, 주장, 판단, 결정을 추출하세요.",
-                             {"source": projected, "settings": settings}, wire.StructureContent).model_dump()
+        quoted = provider.call(STUDIO_INSTRUCTIONS + "원문에서 사건 개요, 당사자, 핵심 사실, 주장, 판단, 결정을 추출하세요.",
+                               {"source": projected, "settings": settings}, wire.AiStructureContent).model_dump()
+        return wire.StructureContent.model_validate(resolve_structure_quotes(quoted, projected)).model_dump()
     legacy = provider.analyze(Document(title="데모 원문 대조 자료", source=source, settings=Settings()))
     parties = [{"id": p.id, "sourceLabel": p.role, "legalStatus": p.role,
                 "displayName": p.role if settings["naming"] == "legal" else p.label,
@@ -61,13 +64,15 @@ def analyze(provider, source, projected, settings):
 def draft(provider, state):
     structure, project = state["structure"], state["project"]
     if provider.name != "demo":
-        return provider.call(STUDIO_INSTRUCTIONS + "쉬운 설명자료 초안을 만드세요. "
+        quoted = provider.call(STUDIO_INSTRUCTIONS + "쉬운 설명자료 초안을 만드세요. "
             "sections는 people, decision, reasons, glossary 순서이고 glossary의 cards는 빈 배열입니다. "
             "people 카드 role은 person/background, decision은 decision, reasons는 background/claim/finding입니다. "
             "카드별 문장을 나누고 origin=ai-draft, verified=false로 설정하세요. "
+            "문장마다 anchors에 그 문장의 바탕이 된 원문 quote를 붙이세요. "
             "images=[], imageId=null로 두세요. 인물·주장 카드의 partyId는 partyNames와 연결하세요. "
             "중요한 주장·판단·결정을 빠짐없이 보존하세요.",
-            {"source": state["source"], "structure": structure, "settings": project["settings"]}, wire.DraftContent).model_dump()
+            {"source": state["source"], "structure": structure, "settings": project["settings"]}, wire.AiDraftContent).model_dump()
+        return wire.DraftContent.model_validate(resolve_draft_quotes(quoted, state["source"])).model_dump()
     sections = [{"kind": kind, "title": title, "cards": []} for kind, title in
                 [("people", "등장인물"), ("decision", "법원의 결정"), ("reasons", "사건의 내용과 이유"), ("glossary", "어려운 말 풀이")]]
     for group, index, role, field in [("keyFacts", 0, "background", "value"), ("claims", 2, "claim", "text"),

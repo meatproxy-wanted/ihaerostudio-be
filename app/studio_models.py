@@ -135,6 +135,55 @@ class PartyName(Wire):
     displayName: Text
 
 
+class Quote(Wire):
+    """Evidence as the model writes it: text copied from one paragraph. The server locates it (see studio_domain.resolve_quotes)."""
+    paragraphId: Id
+    quote: Annotated[str, Field(min_length=1, max_length=4000)]
+
+
+# What the model is asked to produce. Same shape as the wire models, except that every
+# anchor is a quote; models cannot count UTF-16 offsets reliably, but they can copy text.
+class AiParty(Party):
+    anchors: list[Quote] = Field(max_length=30)
+
+
+class AiKeyFact(KeyFact):
+    anchors: list[Quote] = Field(max_length=30)
+
+
+class AiClaim(Claim):
+    anchors: list[Quote] = Field(max_length=30)
+
+
+class AiFinding(Finding):
+    anchors: list[Quote] = Field(max_length=30)
+
+
+class AiDecision(Decision):
+    anchors: list[Quote] = Field(max_length=30)
+
+
+class AiStructureContent(Wire):
+    overview: Overview
+    parties: list[AiParty] = Field(max_length=100)
+    keyFacts: list[AiKeyFact] = Field(max_length=300)
+    claims: list[AiClaim] = Field(max_length=300)
+    findings: list[AiFinding] = Field(max_length=300)
+    decisions: list[AiDecision] = Field(max_length=300)
+
+
+class AiSentence(Sentence):
+    anchors: list[Quote] = Field(max_length=30)
+
+
+class AiCard(Card):
+    sentences: list[AiSentence] = Field(min_length=1, max_length=100)
+
+
+class AiSection(Section):
+    cards: list[AiCard] = Field(max_length=300)
+
+
 class DraftContent(Wire):
     title: Text
     subtitle: Text
@@ -152,6 +201,10 @@ class DraftContent(Wire):
         if any(c.role not in allowed[s.kind] for s in self.sections for c in s.cards):
             raise ValueError("카드 종류와 섹션이 맞지 않습니다.")
         return self
+
+
+class AiDraftContent(DraftContent):
+    sections: list[AiSection] = Field(min_length=4, max_length=4)
 
 
 class EasyDocument(DraftContent):

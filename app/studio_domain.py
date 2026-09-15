@@ -1,4 +1,5 @@
 """FE reference integrity, reader projection and conservative producer checks."""
+import difflib
 import hashlib
 import json
 import re
@@ -26,6 +27,113 @@ def anchor_text(source, anchor):
         return encoded[anchor["start"] * 2:anchor["end"] * 2].decode("utf-16-le")
     except UnicodeDecodeError:
         fail(422, "invalid_anchor", "문자 중간에서 근거 범위를 나눌 수 없어요.")
+
+
+UNRESOLVED_FLAG = {"code": "anchor-unresolved",
+                   "message": "AI가 적은 근거를 원문에서 찾지 못했어요. 원문과 직접 비교해 주세요."}
+MAX_ANCHORS = 30
+
+
+def _collapse(text):
+    """A whitespace-insensitive view of text with a map back to original indexes."""
+    chars, positions = [], []
+    for index, char in enumerate(text):
+        if char.isspace():
+            if chars and chars[-1] != " ":
+                chars.append(" ")
+                positions.append(index)
+            continue
+        chars.append(char)
+        positions.append(index)
+    if chars and chars[-1] == " ":
+        chars.pop()
+        positions.pop()
+    return "".join(chars), positions
+
+
+def _locate(text, quote, fuzzy):
+    """Python [start, end) of a quote inside a paragraph, or None."""
+    if not fuzzy:
+        index = text.find(quote)
+        if index >= 0:
+            return index, index + len(quote)
+    collapsed, positions = _collapse(text)
+    needle, _ = _collapse(quote)
+    if not needle:
+        return None
+    if not fuzzy:
+        index = collapsed.find(needle)
+        if index >= 0:
+            return positions[index], positions[index + len(needle) - 1] + 1
+        return None
+    # The model rewrote a little: keep the longest run it did copy, if that is most of the quote.
+    match = difflib.SequenceMatcher(None, collapsed, needle, autojunk=False).find_longest_match(
+        0, len(collapsed), 0, len(needle))
+    if match.size >= max(10, int(len(needle) * 0.6)):
+        return positions[match.a], positions[match.a + match.size - 1] + 1
+    return None
+
+
+def resolve_quotes(quotes, source):
+    """Turns model-written quotes into UTF-16 anchors. Returns (anchors, unresolved count).
+
+    Exact and whitespace-insensitive matches are tried in the named paragraph first, then in
+    every other paragraph (models mix up ids more often than text); a fuzzy match is accepted
+    only inside the named paragraph. Quotes that cannot be found are dropped, never guessed.
+    """
+    paragraphs = source["paragraphs"]
+    by_id = {p["id"]: p for p in paragraphs}
+    anchors, seen, unresolved = [], set(), 0
+    for item in quotes:
+        quote = item["quote"].strip()
+        named = by_id.get(item["paragraphId"])
+        ordered = ([named] if named else []) + [p for p in paragraphs if p is not named]
+        located = None
+        for fuzzy, candidates in ((False, ordered), (True, [named] if named else [])):
+            for paragraph in candidates:
+                span = _locate(paragraph["text"], quote, fuzzy) if quote else None
+                if span:
+                    located = (paragraph, span)
+                    break
+            if located:
+                break
+        if not located:
+            unresolved += 1
+            continue
+        paragraph, (start, end) = located
+        anchor = {"paragraphId": paragraph["id"],
+                  "start": utf16_length(paragraph["text"][:start]), "end": utf16_length(paragraph["text"][:end])}
+        key = (anchor["paragraphId"], anchor["start"], anchor["end"])
+        if key not in seen and len(anchors) < MAX_ANCHORS:
+            seen.add(key)
+            anchors.append(anchor)
+    return anchors, unresolved
+
+
+def resolve_structure_quotes(structure, source):
+    """Structure as the model returned it (quotes) -> the wire structure (anchors)."""
+    resolved = {"overview": structure["overview"]}
+    for group in ("parties", "keyFacts", "claims", "findings", "decisions"):
+        items = []
+        for item in structure[group]:
+            anchors, unresolved = resolve_quotes(item["anchors"], source)
+            flags = list(item["flags"]) + ([UNRESOLVED_FLAG] if unresolved else [])
+            items.append({**item, "anchors": anchors, "flags": flags})
+        resolved[group] = items
+    return resolved
+
+
+def resolve_draft_quotes(draft, source):
+    """Draft as the model returned it (quotes) -> the wire draft (anchors). Unfound quotes leave a sentence without evidence, which the review flags."""
+    sections = []
+    for section in draft["sections"]:
+        cards = []
+        for card in section["cards"]:
+            sentences = [{**sentence, "anchors": resolve_quotes(sentence["anchors"], source)[0]}
+                         for sentence in card["sentences"]]
+            cards.append({**card, "sentences": sentences})
+        sections.append({**section, "cards": cards})
+    return {**draft, "sections": sections}
 
 
 def unique(items, field="id"):

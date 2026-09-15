@@ -8,11 +8,12 @@ from app import studio_models as wire
 from app.config import Config
 from app.providers import strict_schema
 from app.studio_api import SAMPLE_TEXT
+from app.studio_domain import anchor_text
 from test_studio import BASE, SETTINGS, client, create, draft, path
 
 
-@pytest.mark.parametrize("model", [wire.StructureContent, wire.DraftContent, wire.Suggestions,
-                                  wire.Sentences, wire.Terms, wire.Explanation])
+@pytest.mark.parametrize("model", [wire.StructureContent, wire.DraftContent, wire.AiStructureContent,
+                                  wire.AiDraftContent, wire.Suggestions, wire.Sentences, wire.Terms, wire.Explanation])
 def test_strict_schema_preserves_frontend_properties(model):
     original = model.model_json_schema()
     schema = strict_schema(model)
@@ -47,15 +48,25 @@ def use_openai(client):
     provider.config.openai_model = "test-model"
 
 
+def quoted(anchors, source):
+    """What a model returns instead of offsets: the evidence text itself."""
+    return [{"paragraphId": a["paragraphId"], "quote": anchor_text(source, a)} for a in anchors]
+
+
 def test_analysis_and_draft_transport_use_frontend_contract(client, monkeypatch):
     fixture = create(client)
+    source = client.get(path(fixture) + "/source").json()
     structure = client.get(path(fixture) + "/structure").json()
     document = draft(client, fixture)
-    outputs = {
-        "StructureContent": {k: structure[k] for k in wire.StructureContent.model_fields},
-        "DraftContent": {k: document[k] for k in wire.DraftContent.model_fields},
-    }
-    outputs["DraftContent"]["title"] = "FE 계약으로 반환한 테스트 초안"
+    ai_structure = {k: structure[k] for k in wire.StructureContent.model_fields}
+    for group in ("parties", "keyFacts", "claims", "findings", "decisions"):
+        ai_structure[group] = [{**item, "anchors": quoted(item["anchors"], source)} for item in ai_structure[group]]
+    ai_document = {k: document[k] for k in wire.DraftContent.model_fields}
+    ai_document["sections"] = [{**section, "cards": [{**card, "sentences": [
+        {**sentence, "anchors": quoted(sentence["anchors"], source)} for sentence in card["sentences"]]}
+        for card in section["cards"]]} for section in ai_document["sections"]]
+    outputs = {"AiStructureContent": ai_structure, "AiDraftContent": ai_document}
+    outputs["AiDraftContent"]["title"] = "FE 계약으로 반환한 테스트 초안"
     captured = []
 
     def fake_post(self, url, **kwargs):
@@ -70,7 +81,7 @@ def test_analysis_and_draft_transport_use_frontend_contract(client, monkeypatch)
         assert payload["settings"] == SETTINGS
         assert payload["source"]["paragraphs"][0]["text"] == SAMPLE_TEXT.split("\n\n")[0]
         name = body["text"]["format"]["name"]
-        if name == "DraftContent":
+        if name == "AiDraftContent":
             assert payload["structure"]["overview"] == structure["overview"]
         return httpx.Response(200, json={"status": "completed", "output": [
             {"type": "reasoning", "summary": []},
@@ -82,11 +93,19 @@ def test_analysis_and_draft_transport_use_frontend_contract(client, monkeypatch)
     response = client.request("POST", BASE + "/projects/text", json={"text": SAMPLE_TEXT, "settings": SETTINGS})
     assert response.status_code == 201, response.text
     project = response.json()
+    # Quotes came back as the very offsets the demo structure had: the round trip is lossless.
+    resolved = client.get(path(project) + "/structure").json()
+    for group in ("parties", "keyFacts", "claims", "findings", "decisions"):
+        assert [item["anchors"] for item in resolved[group]] == [item["anchors"] for item in structure[group]]
+        assert not any("anchor-unresolved" in [f["code"] for f in item["flags"]] for item in resolved[group])
     response = client.request("POST", path(project) + "/document/generate")
     assert response.status_code == 200, response.text
-    assert response.json()["document"]["title"] == outputs["DraftContent"]["title"]
+    generated = response.json()["document"]
+    assert generated["title"] == outputs["AiDraftContent"]["title"]
+    assert [[s["anchors"] for c in sec["cards"] for s in c["sentences"]] for sec in generated["sections"]] == \
+        [[s["anchors"] for c in sec["cards"] for s in c["sentences"]] for sec in document["sections"]]
     assert response.json()["project"]["id"] == project["id"]
-    assert [item["text"]["format"]["name"] for item in captured] == ["StructureContent", "DraftContent"]
+    assert [item["text"]["format"]["name"] for item in captured] == ["AiStructureContent", "AiDraftContent"]
 
 
 @pytest.mark.parametrize("phase", ["analysis", "draft"])

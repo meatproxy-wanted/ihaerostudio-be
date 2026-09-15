@@ -54,6 +54,8 @@ API_DESCRIPTION = """
 - `basedOnStructureRevision`·`basedOnSettingsRevision`은 초안 생성의 기준 버전입니다. 문서 저장 요청에서 임의로 갱신할 수 없습니다.
 - `anchors[].start/end`는 **문단 text 기준 JavaScript UTF-16 인덱스**이며 시작 포함·끝 미포함입니다.
   예: `😀원고`의 `원고`는 start=2, end=4입니다. 바이트 위치·PDF 좌표·문서 전체 위치가 아닙니다.
+- 실제 AI가 만든 구조·초안의 근거는 모델이 원문에서 복사한 인용문을 서버가 문단 안에서 찾아 위치로 바꿉니다.
+  찾지 못한 인용은 버리고, 구조 항목에는 `anchor-unresolved` 확인 표시를 답니다. 문장은 근거 없는 상태로 남아 점검 대상이 됩니다.
 
 ## 실제 AI, 데모, 그림 생성의 차이
 
