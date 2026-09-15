@@ -275,10 +275,10 @@ describe("latest_review", "최근 점검 조회 — 저장된 검토 결과 또�
     "최근 ReviewRun 객체를 반환하며 점검 전 또는 문서 저장 등으로 점검이 해제된 상태는 200 null입니다. 빈 배열이나 404가 아닙니다. 프로젝트 자체가 없거나 접근 불가하면 404입니다.",
     "저장 결과를 읽기만 하며 새 점검을 수행하지 않습니다. items[].dismissal이 null이면 아직 문제없음 확인을 하지 않은 항목입니다.",
     "결과가 null이거나 최신 내용 점검이 필요하면 POST review/run을 호출합니다. level=required와 dismissal=null인 항목을 확인해야 검토를 완료할 수 있습니다.", nullable(ref("StudioReviewRun")), ex.REVIEW, errors="not_found", alternatives={"not_checked": ("아직 점검하지 않았거나 점검이 해제됨", None)})
-describe("run_review", "문서 점검 실행 — 원문·숫자·분류·그림 규칙 검사",
+describe("run_review", "문서 점검 실행 — 원문 근거·숫자·문장 길이 규칙 검사",
     "저장된 편집 문서를 검토하거나 편집 후 다시 점검할 때 호출합니다.", "project_id만 전달합니다. 요청 본문은 없으며 초안 문서가 먼저 존재해야 합니다. 편집 중 내용은 PUT document 저장을 마친 뒤 점검합니다.",
-    "{run, project}를 반환합니다. run.items에는 원문 근거·대조 표시·수치·주장/판단 구분·그림 의미·대체텍스트·긴 문장 등의 항목이 들어갑니다. required는 검토 완료를 막고 suggested는 권고 항목입니다.",
-    "OpenAI나 Comfy를 호출하지 않는 규칙 점검입니다. 이미지의 실제 뜻을 자동 판정하지 않습니다. 점검 결과를 저장하고 기존 최종 검토 완료를 해제합니다. 동일 대상·내용·근거·구조·설정의 확인 기록은 key가 같으면 유지될 수 있습니다.",
+    "{run, project}를 반환합니다. run.items에는 원문 근거가 없는 문장(no-anchor, required), 원문에 없는 숫자가 든 문장(numbers, required), 45자를 넘는 문장(long-sentence, suggested)만 들어갑니다. required는 검토 완료를 막고 suggested는 권고 항목입니다.",
+    "OpenAI나 Comfy를 호출하지 않는 규칙 점검입니다. 누가 말했는지, 주장과 판단의 구분, 그림의 뜻은 판정하지 않으며 최종 체크리스트에서 제작자가 직접 확인합니다. 점검 결과를 저장하고 기존 최종 검토 완료를 해제합니다. 같은 문장·근거의 확인 기록은 key가 같아 다시 점검해도 유지됩니다.",
     "각 항목의 target 위치를 보여 주고 원문·그림을 대조하세요. 문제가 없다고 판단한 항목은 review/dismiss, 수정이 필요하면 문서 저장 후 재점검합니다.", ref("StudioReviewResult"), {"run": ex.REVIEW, "project": ex.REVIEW_PROJECT}, errors="not_found version_conflict")
 
 HANDLED_REVIEW = deepcopy(ex.REVIEW)
@@ -289,12 +289,12 @@ describe("dismiss", "점검 항목 확인 — 제작자가 문제없음을 기�
     "제작자가 해당 점검 항목을 원문·그림과 비교하여 문제없다고 확인했을 때 호출합니다.", "최근 점검 items[].key와 memo를 보냅니다. memo 필드는 필수지만 빈 문자열도 허용하며 최대 2,000자입니다. 예제 key를 그대로 쓰지 말고 실제 점검 응답의 값을 사용하세요.",
     "{run, project}를 반환합니다. 해당 항목 dismissal에 메모·시각이 기록되고 미처리 required 수가 갱신됩니다.",
     "점검 경고를 자동 수정하거나 문장 verified를 바꾸지 않습니다. 제작자의 확인 기록만 저장하고 기존 최종 검토 완료는 해제합니다. 최근 점검이 없으면 review_required, key가 없으면 not_found입니다.",
-    "남은 required 항목을 처리한 뒤 review/complete로 최종 체크리스트를 제출합니다. 문장 원문 대조 표시를 바꾸려면 문서를 별도로 저장해야 합니다.", ref("StudioReviewResult"), {"run": HANDLED_REVIEW, "project": HANDLED_PROJECT}, errors="not_found review_required version_conflict", body={"key": "relations:example", "memo": "가상 예제 원문과 직접 비교했습니다."})
+    "남은 required 항목을 처리한 뒤 review/complete로 최종 체크리스트를 제출합니다. 문장 원문 대조 표시를 바꾸려면 문서를 별도로 저장해야 합니다.", ref("StudioReviewResult"), {"run": HANDLED_REVIEW, "project": HANDLED_PROJECT}, errors="not_found review_required version_conflict", body={"key": "numbers:example", "memo": "가상 예제 원문과 직접 비교했습니다."})
 describe("restore", "점검 항목 확인 취소 — 다시 미처리 상태로 복원",
     "문제없음으로 확인한 점검 항목을 다시 검토 대상으로 되돌릴 때 호출합니다.", "최근 점검 결과에 존재하는 key만 보냅니다. 요청은 {key}이며 memo를 보내지 않습니다.",
     "{run, project}를 반환하고 해당 dismissal은 null이 됩니다. required 항목이면 미처리 required 수가 다시 증가합니다.",
     "그 항목의 보관 확인 기록을 지우고 최종 검토 완료를 해제합니다. 문서·원문·그림 내용은 바꾸지 않습니다. 이미 미처리여도 같은 상태로 저장될 수 있습니다.",
-    "해당 항목을 다시 대조하거나 편집합니다. 필요한 확인을 마친 뒤 review/complete를 다시 호출하세요.", ref("StudioReviewResult"), {"run": ex.REVIEW, "project": ex.REVIEW_PROJECT}, errors="not_found review_required version_conflict", body={"key": "relations:example"})
+    "해당 항목을 다시 대조하거나 편집합니다. 필요한 확인을 마친 뒤 review/complete를 다시 호출하세요.", ref("StudioReviewResult"), {"run": ex.REVIEW, "project": ex.REVIEW_PROJECT}, errors="not_found review_required version_conflict", body={"key": "numbers:example"})
 describe("complete", "최종 검토 완료 — 필수 항목과 체크리스트 확인",
     "제작자가 현재 문서의 필수 점검 항목을 확인하고 최종 대조를 마쳤을 때 호출합니다.", "JSON checklist를 보냅니다. numbers·relations·claims는 항상 필요하고 illustrations=with이면 images도 필요합니다. 순서는 무관하지만 중복·누락·추가 항목은 거절합니다.",
     "{completion, project}를 반환합니다. completion에는 contentRevision·completedAt·제출 checklist가 들어가며 프로젝트에도 완료한 내용 버전을 기록합니다.",

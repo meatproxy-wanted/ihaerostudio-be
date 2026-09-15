@@ -46,8 +46,8 @@ PROJECT = {
 DRAFT_PROJECT = deepcopy(PROJECT)
 DRAFT_PROJECT["document"] = summarize_document(DOCUMENT)
 REVIEW = {"projectId": PROJECT["id"], "contentRevision": 0, "ranAt": AT, "items": [
-    {"key": "relations:example", "category": "relations", "level": "required", "title": "원문 대조가 필요해요",
-     "detail": "누가 누구에게 무엇을 하는지 원문과 비교해 주세요.",
+    {"key": "numbers:example", "category": "numbers", "level": "required", "title": "숫자를 원문과 비교해 주세요",
+     "detail": "표기가 바뀐 금액·날짜·기간일 수 있어요. 값과 단위를 확인해 주세요.",
      "target": {"type": "sentence", "cardId": "card-1", "sentenceId": "sentence-1"},
      "evidence": {"text": DOCUMENT["sections"][1]["cards"][0]["sentences"][0]["text"], "anchors": [ANCHOR], "structureValue": None, "imageId": None},
      "suggestion": None, "dismissal": None}]}

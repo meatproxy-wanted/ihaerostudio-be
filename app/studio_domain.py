@@ -241,61 +241,40 @@ def require_document(state):
     return state["document"]
 
 
-def review_items(state):
-    document = require_document(state)
-    project, structure = state["project"], state["structure"]
-    items = []
-    revision_context = [project["structureRevision"], project["settingsRevision"]]
+LONG_SENTENCE = 45
 
-    def add(category, title, detail, target, text=None, anchors=None, image_id=None, level="required", extra=None):
-        evidence = {"text": text, "anchors": anchors or [], "structureValue": None, "imageId": image_id}
-        # Source/settings/anchors are part of the key so old acknowledgements cannot certify new evidence.
-        digest = hashlib.sha256(json.dumps([category, title, target, evidence, revision_context, extra], sort_keys=True).encode()).hexdigest()[:24]
+
+def review_items(state):
+    """Rule checks a producer asked for: missing evidence, numbers the source does not have, long sentences.
+
+    Deliberately narrow. Everything else (who said what, claims vs findings, picture meaning)
+    is the producer's own comparison, guided by the final checklist rather than by items.
+    """
+    document = require_document(state)
+    items = []
+
+    def add(category, title, detail, target, text, anchors, level="required"):
+        evidence = {"text": text, "anchors": anchors, "structureValue": None, "imageId": None}
+        # The key follows the sentence's content and evidence, so an acknowledgement survives
+        # re-checks until the sentence itself changes.
+        digest = hashlib.sha256(json.dumps([category, target, evidence], sort_keys=True).encode()).hexdigest()[:24]
         key = f"{category}:{digest}"
         items.append({"key": key, "category": category, "level": level, "title": title, "detail": detail,
                       "target": target, "evidence": evidence, "suggestion": None,
                       "dismissal": state["dismissals"].get(key)})
 
-    if (document["basedOnStructureRevision"] != project["structureRevision"] or
-            document["basedOnSettingsRevision"] != project["settingsRevision"]):
-        add("structure-changed", "초안 생성 뒤 구조·설정이 바뀌었어요", "바뀐 내용을 직접 반영했는지 확인하거나 초안을 다시 만들어 주세요.", {"type": "document"})
-    if not sentences(document):
-        add("no-anchor", "설명 문장이 없어요", "초안을 작성해 주세요.", {"type": "document"})
     source_text = "\n".join(p["text"] for p in state["source"]["paragraphs"])
     known_numbers = set(re.findall(r"\d[\d,]*(?:\.\d+)?", source_text.replace(",", "")))
-    images = {i["id"]: i for i in document["images"]}
     for card in cards(document):
-        if card["role"] in {"claim", "person"} and card["partyId"] is None:
-            add("relations", "카드의 당사자가 없어요", "인물·주장 카드가 누구의 내용인지 선택해 주세요.", {"type": "card", "cardId": card["id"]})
         for sentence in card["sentences"]:
             target = {"type": "sentence", "cardId": card["id"], "sentenceId": sentence["id"]}
             text, anchors = sentence["text"], sentence["anchors"]
             if not anchors:
                 add("no-anchor", "원문 근거가 없는 문장이에요", "근거를 연결하거나 원문과 직접 비교해 주세요.", target, text, anchors)
-            if not sentence["verified"]:
-                add("relations", "원문 대조가 필요해요", "누가 누구에게 무엇을 하는지, 부정 표현과 조건을 원문과 비교해 주세요.", target, text, anchors)
             if set(re.findall(r"\d[\d,]*(?:\.\d+)?", text.replace(",", ""))) - known_numbers:
                 add("numbers", "숫자를 원문과 비교해 주세요", "표기가 바뀐 금액·날짜·기간일 수 있어요. 값과 단위를 확인해 주세요.", target, text, anchors)
-            if card["role"] in {"claim", "finding", "decision"}:
-                add("claim-mix", "주장과 법원의 판단을 대조해 주세요", "카드 분류와 말한 사람이 원문과 같은지 확인해 주세요.", target, text, anchors)
-            if len(text) > 45:
+            if len(text) > LONG_SENTENCE:
                 add("long-sentence", "문장이 길어요", "한 문장에 한 가지 내용을 담아 주세요.", target, text, anchors, level="suggested")
-        image = images.get(card["imageId"]) if project["settings"]["illustrations"] == "with" else None
-        if image:
-            target = {"type": "image", "cardId": card["id"], "imageId": image["id"]}
-            add("image-meaning", "그림의 뜻을 확인해 주세요", "자동 점검은 그림을 해석하지 않아요. 그림이 글과 같은 뜻인지 직접 확인해 주세요.",
-                target, " ".join(s["text"] for s in card["sentences"]) + " / " + image["meaning"], image_id=image["id"],
-                extra=hashlib.sha256((image["src"] + image["alt"]).encode()).hexdigest())
-            if not image["alt"].strip():
-                add("alt-text", "대체텍스트가 없어요", "그림 내용을 짧게 설명해 주세요.", target, image_id=image["id"])
-    # Important structure items must be represented, even if all remaining sentences were verified.
-    covered = [a for s in sentences(document) for a in s["anchors"]]
-    for group in ("claims", "findings", "decisions"):
-        for item in structure[group]:
-            if not any(a["paragraphId"] == b["paragraphId"] and a["start"] < b["end"] and b["start"] < a["end"]
-                       for a in item["anchors"] for b in covered):
-                add("no-anchor", "사건 구조의 내용이 빠졌을 수 있어요", "중요한 주장·판단·결정이 설명자료에 포함됐는지 확인해 주세요.",
-                    {"type": "document"}, item["text"], item["anchors"])
     return items
 
 
