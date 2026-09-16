@@ -4357,88 +4357,6 @@
               }
             }
           },
-          "502": {
-            "description": "발생 조건과 처리 방법:\n\n- **image_identity_mismatch**: 인물의 외형이 기준과 달라 후보에서 제외했어요. 같은 요청으로 다시 시도하면 유료 보정 생성을 한 번 진행합니다. 실패 후보는 자산이나 후보로 반환하지 않습니다.\n\n- **image_identity_unresolved**: 보정 후에도 인물 외형이 기준과 달라 후보에서 제외했어요. 추가 자동 생성은 멈춥니다. 기준 그림이나 장면 설명을 수정한 뒤 새 후보를 요청합니다.\n\n- **image_missing_output**: Comfy 작업에 완성된 그림이 없어요. 관리자가 해당 Comfy 작업의 출력과 로그를 확인합니다.\n\n- **image_generation_failed**: Comfy 그림 생성이 완료되지 않았어요. 작업이 failed·canceled·expired 상태입니다. 자동 새 생성 없이 관리자 확인이 필요합니다.\n\n- **ai_provider_error**: OpenAI API 호출 또는 응답 검증에 실패했습니다. 서버의 키·모델·권한을 확인합니다. 기존 문서는 성공 응답 전까지 유지됩니다.\n\n- **ai_incomplete_response**: GPT 응답이 완료되지 않았습니다. 모델 출력 한도를 확인하거나 자료를 줄입니다.\n\n- **ai_refusal**: GPT가 요청의 처리를 거절했습니다. 원문을 확인하고 직접 편집합니다.\n",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "image_identity_mismatch": {
-                    "summary": "image_identity_mismatch",
-                    "description": "같은 요청으로 다시 시도하면 유료 보정 생성을 한 번 진행합니다. 실패 후보는 자산이나 후보로 반환하지 않습니다.",
-                    "value": {
-                      "detail": {
-                        "code": "image_identity_mismatch",
-                        "message": "인물의 외형이 기준과 달라 후보에서 제외했어요."
-                      }
-                    }
-                  },
-                  "image_identity_unresolved": {
-                    "summary": "image_identity_unresolved",
-                    "description": "추가 자동 생성은 멈춥니다. 기준 그림이나 장면 설명을 수정한 뒤 새 후보를 요청합니다.",
-                    "value": {
-                      "detail": {
-                        "code": "image_identity_unresolved",
-                        "message": "보정 후에도 인물 외형이 기준과 달라 후보에서 제외했어요."
-                      }
-                    }
-                  },
-                  "image_missing_output": {
-                    "summary": "image_missing_output",
-                    "description": "관리자가 해당 Comfy 작업의 출력과 로그를 확인합니다.",
-                    "value": {
-                      "detail": {
-                        "code": "image_missing_output",
-                        "message": "Comfy 작업에 완성된 그림이 없어요."
-                      }
-                    }
-                  },
-                  "image_generation_failed": {
-                    "summary": "image_generation_failed",
-                    "description": "작업이 failed·canceled·expired 상태입니다. 자동 새 생성 없이 관리자 확인이 필요합니다.",
-                    "value": {
-                      "detail": {
-                        "code": "image_generation_failed",
-                        "message": "Comfy 그림 생성이 완료되지 않았어요."
-                      }
-                    }
-                  },
-                  "ai_provider_error": {
-                    "summary": "ai_provider_error",
-                    "description": "서버의 키·모델·권한을 확인합니다. 기존 문서는 성공 응답 전까지 유지됩니다.",
-                    "value": {
-                      "detail": {
-                        "code": "ai_provider_error",
-                        "message": "OpenAI API 호출 또는 응답 검증에 실패했습니다."
-                      }
-                    }
-                  },
-                  "ai_incomplete_response": {
-                    "summary": "ai_incomplete_response",
-                    "description": "모델 출력 한도를 확인하거나 자료를 줄입니다.",
-                    "value": {
-                      "detail": {
-                        "code": "ai_incomplete_response",
-                        "message": "GPT 응답이 완료되지 않았습니다."
-                      }
-                    }
-                  },
-                  "ai_refusal": {
-                    "summary": "ai_refusal",
-                    "description": "원문을 확인하고 직접 편집합니다.",
-                    "value": {
-                      "detail": {
-                        "code": "ai_refusal",
-                        "message": "GPT가 요청의 처리를 거절했습니다."
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
           "503": {
             "description": "발생 조건과 처리 방법:\n\n- **comfy_not_configured**: 서버의 COMFY_CLOUD_API_KEY를 설정하세요. 백엔드 환경변수에 Comfy Cloud 키를 넣고 서버를 재시작합니다.\n\n- **comfy_auth_error**: Comfy 키 또는 구독 권한을 확인해 주세요. Comfy Cloud 키와 계정 실행 권한을 확인합니다.\n\n- **comfy_insufficient_credits**: Comfy 생성 크레딧이 부족해요. Comfy 계정의 크레딧을 확인합니다. 명확한 접수 거절은 기존 준비 작업으로 재시도할 수 있습니다.\n\n- **comfy_rate_limited**: Comfy 요청이 많아요. 잠시 후 같은 카드 요청으로 상태를 확인합니다.\n\n- **comfy_workflow_unavailable**: Comfy에서 그림 생성 모델을 사용할 수 없어요. 관리자가 고정 워크플로와 Cloud 모델 목록을 확인합니다.\n\n- **image_in_progress**: 그림을 생성하고 있어요. 잠시 후 다시 시도하면 같은 작업을 확인해요. 완료 실패가 아닙니다. 잠시 기다린 뒤 같은 cardId로 재요청하면 진행 중 작업을 재사용합니다.\n\n- **image_submission_unknown**: Comfy 접수 결과를 확인하지 못했어요. 중복 생성을 막기 위해 멈췄어요. 자동 재제출하지 않습니다. 관리자가 studio_image_jobs와 Comfy 작업 목록을 대조해야 합니다.\n\n- **comfy_connection_or_response_error**: Comfy 그림 응답을 확인하지 못했어요. 같은 요청으로 상태를 확인합니다. 접수 자체가 불확실했다면 이후 image_submission_unknown으로 멈출 수 있습니다.\n\n- **comfy_invalid_response**: Comfy 그림 응답을 확인하지 못했어요. 관리자가 응답 형식·작업 ID·자산 메타데이터를 확인합니다. 새 유료 작업으로 자동 대체하지 않습니다.\n\n- **comfy_asset_host_not_allowed**: 그림은 생성됐지만 저장소 주소가 허용되지 않았어요. 관리자가 실제 자산 호스트를 검증하고 COMFY_ASSET_ALLOWED_HOSTS에 등록합니다. 이후 같은 작업을 이어받습니다.\n\n- **comfy_download_failed**: Comfy 그림 파일을 내려받지 못했어요. 다시 요청하면 자산 메타데이터의 새 서명 URL로 다운로드를 재시도합니다.\n\n- **ai_rate_limited**: OpenAI API 사용 한도 또는 요청 제한에 도달했습니다. OpenAI 계정의 API 결제·사용 한도를 확인한 뒤 재시도합니다.\n\n- **comfy_invalid_workflow**: Comfy 그림 응답을 확인하지 못했어요. 관리자가 고정 워크플로의 노드·입력·모델을 확인합니다. 명확한 접수 거절이면 준비 작업을 보존합니다.\n\n- **comfy_upstream_error**: Comfy 그림 응답을 확인하지 못했어요. 제공자 오류입니다. 접수 결과가 불확실하면 중복 제출하지 않고 관리자 확인이 필요합니다.\n\n- **comfy_not_found**: Comfy 그림 응답을 확인하지 못했어요. 제공자 작업·자산이 없거나 만료됐는지 확인합니다. 백엔드 자료 not_found와 구분합니다.\n\n- **comfy_submission_unknown**: Comfy 그림 응답을 확인하지 못했어요. 제공자가 같은 접수 키의 재사용을 거절했습니다. 기존 작업을 조회하고 새 유료 작업으로 대체하지 않습니다.\n\n- **comfy_invalid_url**: Comfy 그림 응답을 확인하지 못했어요. 제공자 호출 URL이 허용된 Comfy Cloud 주소인지 관리자가 확인합니다.\n\n- **comfy_invalid_node_schema**: Comfy 그림 응답을 확인하지 못했어요. 제공자의 노드 정의와 서버 사전 점검 코드의 호환성을 확인합니다.\n\n- **comfy_image_too_large**: Comfy 그림 응답을 확인하지 못했어요. 생성 파일 다운로드가 5MiB 제한을 넘었습니다. 관리자가 생성 결과를 확인합니다.\n",
             "content": {
@@ -4641,6 +4559,68 @@
               }
             }
           },
+          "502": {
+            "description": "발생 조건과 처리 방법:\n\n- **image_missing_output**: Comfy 작업에 완성된 그림이 없어요. 관리자가 해당 Comfy 작업의 출력과 로그를 확인합니다.\n\n- **image_generation_failed**: Comfy 그림 생성이 완료되지 않았어요. 작업이 failed·canceled·expired 상태입니다. 자동 새 생성 없이 관리자 확인이 필요합니다.\n\n- **ai_provider_error**: OpenAI API 호출 또는 응답 검증에 실패했습니다. 서버의 키·모델·권한을 확인합니다. 기존 문서는 성공 응답 전까지 유지됩니다.\n\n- **ai_incomplete_response**: GPT 응답이 완료되지 않았습니다. 모델 출력 한도를 확인하거나 자료를 줄입니다.\n\n- **ai_refusal**: GPT가 요청의 처리를 거절했습니다. 원문을 확인하고 직접 편집합니다.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "image_missing_output": {
+                    "summary": "image_missing_output",
+                    "description": "관리자가 해당 Comfy 작업의 출력과 로그를 확인합니다.",
+                    "value": {
+                      "detail": {
+                        "code": "image_missing_output",
+                        "message": "Comfy 작업에 완성된 그림이 없어요."
+                      }
+                    }
+                  },
+                  "image_generation_failed": {
+                    "summary": "image_generation_failed",
+                    "description": "작업이 failed·canceled·expired 상태입니다. 자동 새 생성 없이 관리자 확인이 필요합니다.",
+                    "value": {
+                      "detail": {
+                        "code": "image_generation_failed",
+                        "message": "Comfy 그림 생성이 완료되지 않았어요."
+                      }
+                    }
+                  },
+                  "ai_provider_error": {
+                    "summary": "ai_provider_error",
+                    "description": "서버의 키·모델·권한을 확인합니다. 기존 문서는 성공 응답 전까지 유지됩니다.",
+                    "value": {
+                      "detail": {
+                        "code": "ai_provider_error",
+                        "message": "OpenAI API 호출 또는 응답 검증에 실패했습니다."
+                      }
+                    }
+                  },
+                  "ai_incomplete_response": {
+                    "summary": "ai_incomplete_response",
+                    "description": "모델 출력 한도를 확인하거나 자료를 줄입니다.",
+                    "value": {
+                      "detail": {
+                        "code": "ai_incomplete_response",
+                        "message": "GPT 응답이 완료되지 않았습니다."
+                      }
+                    }
+                  },
+                  "ai_refusal": {
+                    "summary": "ai_refusal",
+                    "description": "원문을 확인하고 직접 편집합니다.",
+                    "value": {
+                      "detail": {
+                        "code": "ai_refusal",
+                        "message": "GPT가 요청의 처리를 거절했습니다."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
           "504": {
             "description": "발생 조건과 처리 방법:\n\n- **ai_timeout**: GPT 응답 시간이 초과되었습니다. 기존 데이터를 조회해 상태를 확인한 뒤 재시도합니다. 제공자 처리·과금 여부와 로컬 저장 성공은 별개입니다.\n",
             "content": {
@@ -4694,7 +4674,7 @@
             }
           }
         },
-        "description": "### 프론트 호출 시점\n\n편집기의 카드 → 그림 넣기/바꾸기 → 그림 후보 보기에서 호출합니다.\n\n### 요청 방법\n\nJSON {cardId}를 보냅니다. 카드 문장·원문 근거·당사자 표시 이름은 저장된 문서에서 읽으므로 자동 저장 완료 후 요청하세요. 프롬프트·워크플로·jobId는 FE에서 보내지 않습니다.\n\n### 응답 해석\n\n{candidates:[{src,alt,meaning}]}를 반환합니다. 실제 AI 모드에서는 해당 카드의 Comfy 결과 1장이 먼저, 업로드 자산이 이어집니다. 생성 결과 src는 서버가 보관한 PNG의 주소(/api/studio/assets/{id})입니다. 예시의 작은 PNG는 형식 설명용이며 실제 생성 품질 예시가 아닙니다.\n\n### 저장·버전·외부 호출 영향\n\n먼저 등장인물(role=person, partyId 지정) 카드에서 그림을 생성·선택하고 PUT document로 저장하세요. 결론·주장·판단·배경 그림을 요청하면 서버가 document.images와 인물 카드의 imageId를 연결해 저장된 기준 그림을 찾습니다. 후보만 생성하고 적용하지 않은 그림은 기준으로 쓰지 않습니다.\n\nOpenAI에는 대상 문장·원문 근거와 등장인물의 이름·역할·저장된 설명, 기준 그림 번호를 함께 전달합니다. 누가 누구에게 무엇을 해야 하는지와 주장·판단·결정을 구분해 장면을 설계합니다. 기준 그림은 OpenAI 이미지 입력으로 읽어 얼굴·머리·수염 유무·상의·하의·신발을 고정 외형으로 저장합니다. 같은 소유자·프로젝트·자산의 동일 픽셀은 분석 결과를 재사용합니다. 생성된 그림도 OpenAI가 관찰하고 서버가 수염·의상 등 항목별 차이를 검사합니다. 불일치 후보는 저장·반환하지 않습니다. 첫 불일치는 502 image_identity_mismatch이며 같은 요청을 다시 보내면 유료 보정 생성을 한 번 진행합니다. 보정도 실패하면 502 image_identity_unresolved로 멈추며 추가 자동 생성은 없습니다. 한 사람을 특정할 수 없는 기준 그림은 422 character_reference_unclear입니다. AI 검사에는 오판 가능성이 있어 완벽한 외형 일치를 보장하지 않습니다. 실제 기준 이미지 픽셀은 Comfy에 업로드하여 Flux.2 Klein 9B의 다중 이미지 입력으로 전달합니다. PNG·JPEG·WebP 최대 6개를 사용하며 외형·옷·색을 유지하도록 지시합니다. 그림은 768×768 한 장입니다. 인물 카드 자체를 생성할 때나 저장된 기준 그림이 없을 때는 기존 Flux Schnell 방식입니다. 외형 일치나 관계의 정확성을 자동 보증하지는 않습니다.\n\n같은 카드와 등장인물 기준은 저장/진행 작업을 재사용합니다. 인물 설명·역할·기준 그림을 바꾸면 다음 요청은 새 생성이 될 수 있고, 이전 결론 그림을 자동 교체하지 않습니다. 데모는 업로드 후보만 반환합니다. 후보는 프로젝트 자산으로 보관하지만 문서에 자동 연결하지 않습니다.\n\nComfy 완료 대기 90초 후 image_in_progress이면 같은 요청으로 이어서 확인합니다. 접수 불확실·실행 실패·만료는 새 유료 작업을 자동 제출하지 않습니다. 생성 중 카드나 등장인물 기준이 바뀌면 image_card_changed로 오래된 후보 적용을 막습니다. 브라우저 요청 취소가 제공자 작업 취소를 뜻하지는 않습니다.\n\n### 다음 동작\n\n사용자가 고른 후보에 FE 그림 ID와 source=library를 부여하고 document.images에 넣습니다. 대상 card.imageId를 연결한 뒤 PUT document로 저장하세요. alt와 meaning은 실제 그림과 대조합니다. 편집 중 FE가 이전 후보를 캐시했다면 최신 내용 저장 후 새 요청이 실제 전송되도록 새로고침합니다.\n\n**인증:** 제작자 Bearer 토큰이 필요합니다. 다른 제작자의 자료에는 접근할 수 없습니다."
+        "description": "### 프론트 호출 시점\n\n편집기의 카드 → 그림 넣기/바꾸기 → 그림 후보 보기에서 호출합니다.\n\n### 요청 방법\n\nJSON {cardId}를 보냅니다. 카드 문장·원문 근거·당사자 표시 이름은 저장된 문서에서 읽으므로 자동 저장 완료 후 요청하세요. 프롬프트·워크플로·jobId는 FE에서 보내지 않습니다.\n\n### 응답 해석\n\n{candidates:[{src,alt,meaning}]}를 반환합니다. 실제 AI 모드에서는 해당 카드의 Comfy 결과 1장이 먼저, 업로드 자산이 이어집니다. 생성 결과 src는 서버가 보관한 PNG의 주소(/api/studio/assets/{id})입니다. 예시의 작은 PNG는 형식 설명용이며 실제 생성 품질 예시가 아닙니다.\n\n### 저장·버전·외부 호출 영향\n\n먼저 등장인물(role=person, partyId 지정) 카드에서 그림을 생성·선택하고 PUT document로 저장하세요. 결론·주장·판단·배경 그림을 요청하면 서버가 document.images와 인물 카드의 imageId를 연결해 저장된 기준 그림을 찾습니다. 후보만 생성하고 적용하지 않은 그림은 기준으로 쓰지 않습니다.\n\nOpenAI에는 대상 문장·원문 근거와 등장인물의 이름·역할·저장된 설명, 기준 그림 번호를 함께 전달합니다. 누가 누구에게 무엇을 해야 하는지와 주장·판단·결정을 구분해 장면을 설계합니다. 기준 그림은 OpenAI 이미지 입력으로 읽어 얼굴·머리·수염 유무·상의·하의·신발을 고정 외형으로 저장합니다. 같은 소유자·프로젝트·자산의 동일 픽셀은 분석 결과를 재사용합니다. 생성 결과를 외형 검사로 차단하거나 자동 보정하지 않고 후보로 반환합니다. 이전 외형 검사에서 제외된 작업도 같은 요청으로 기존 결과를 다시 조회합니다. 한 사람을 특정할 수 없는 기준 그림은 422 character_reference_unclear입니다. 외형 유지 지시가 완벽한 일치를 보장하지 않으므로 후보를 직접 확인합니다. 실제 기준 이미지 픽셀은 Comfy에 업로드하여 Flux.2 Klein 9B의 다중 이미지 입력으로 전달합니다. PNG·JPEG·WebP 최대 6개를 사용하며 외형·옷·색을 유지하도록 지시합니다. 그림은 768×768 한 장입니다. 인물 카드 자체를 생성할 때나 저장된 기준 그림이 없을 때는 기존 Flux Schnell 방식입니다. 외형 일치나 관계의 정확성을 자동 보증하지는 않습니다.\n\n같은 카드와 등장인물 기준은 저장/진행 작업을 재사용합니다. 인물 설명·역할·기준 그림을 바꾸면 다음 요청은 새 생성이 될 수 있고, 이전 결론 그림을 자동 교체하지 않습니다. 데모는 업로드 후보만 반환합니다. 후보는 프로젝트 자산으로 보관하지만 문서에 자동 연결하지 않습니다.\n\nComfy 완료 대기 90초 후 image_in_progress이면 같은 요청으로 이어서 확인합니다. 접수 불확실·실행 실패·만료는 새 유료 작업을 자동 제출하지 않습니다. 생성 중 카드나 등장인물 기준이 바뀌면 image_card_changed로 오래된 후보 적용을 막습니다. 브라우저 요청 취소가 제공자 작업 취소를 뜻하지는 않습니다.\n\n### 다음 동작\n\n사용자가 고른 후보에 FE 그림 ID와 source=library를 부여하고 document.images에 넣습니다. 대상 card.imageId를 연결한 뒤 PUT document로 저장하세요. alt와 meaning은 실제 그림과 대조합니다. 편집 중 FE가 이전 후보를 캐시했다면 최신 내용 저장 후 새 요청이 실제 전송되도록 새로고침합니다.\n\n**인증:** 제작자 Bearer 토큰이 필요합니다. 다른 제작자의 자료에는 접근할 수 없습니다."
       }
     },
     "/api/studio/projects/{project_id}/assist/upload-image": {
