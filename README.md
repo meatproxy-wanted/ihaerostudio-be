@@ -56,6 +56,20 @@ AI 키는 서버 환경변수에만 저장합니다. 실제 AI 모드는 키·�
 AI 요청은 동기 실행이며 실패하면 기존 자료를 보존합니다. 외부 API 오류 원문이나 키는 FE 응답에 포함하지 않습니다.
 실제 AI 호출 시 원문·사건 구조·편집 텍스트가 제공자에게 전달됩니다.
 
+## 쉬운 글 작성 지침 (시스템 프롬프트)
+
+실제 AI 모드의 모든 OpenAI 호출은 시스템 메시지 앞부분에 [`app/prompts/easy_read_guidelines.md`](app/prompts/easy_read_guidelines.md)
+전문을 붙입니다. 이 파일은 사법정책연구원 『장애인 등을 위한 이해하기 쉬운(Easy-Read) 판결서 작성방안』(2024)에서
+AI 변환에 필요한 규칙만 추린 요약본으로, 사건 구조 추출·초안·더 쉽게 바꾸기·문장 나누기·용어 설명·그림 설계에 함께 전달됩니다.
+`app/providers.py`의 `system_prompt()`가 역할·안전 규칙 → 지침 전문 → 작업 지시 순서로 조립하므로,
+호출마다 달라지는 부분은 맨 뒤의 작업 지시뿐이고 앞부분은 OpenAI 프롬프트 캐시가 재사용합니다.
+지침은 GPT 토크나이저 기준 약 1만 7천 토큰이라 호출당 입력 토큰이 그만큼 늘어납니다.
+
+지침 내용을 고칠 때는 FE 저장소의 `docs/references/easy-read-judgment-guidelines.md`(PDF 원본)를 먼저 고치고
+같은 내용을 이 파일에 복사합니다. 형식 규칙(쪽수, 글꼴, "끝." 표시, 원문 우선 안내)은 화면이 처리하므로
+모델에게는 출력하지 말라고 지시하며, FE 구획(people/decision/reasons/glossary)과의 대응은 `app/studio_provider.py`의
+`STUDIO_INSTRUCTIONS`에 있습니다.
+
 ## 실제 AI 실행과 그림 생성
 
 `.env.example`을 `.env`로 복사하고 OpenAI 키·모델 및 Comfy Cloud 키를 입력한 뒤 실행합니다.

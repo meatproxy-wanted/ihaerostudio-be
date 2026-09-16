@@ -1,6 +1,7 @@
 """OpenAI Responses adapter. Demo mode never sends document text externally."""
 import json
 import re
+from pathlib import Path
 
 import httpx
 from pydantic import ValidationError
@@ -21,6 +22,21 @@ SYSTEM = """당신은 성인 독자를 존중하는 쉬운 판결 설명자료 �
 당사자 label을 A씨/B씨처럼 중립적으로 사용하고 adult_respectful 문체를 지켜주세요.
 정확성을 보장하지 마세요. 출력은 요청한 JSON 스키마만 따르세요.
 """
+
+# The Easy-Read judgment guideline (summary of 사법정책연구원 2024) travels with every real AI
+# call as a constant system-prompt prefix, so provider-side prompt caching applies across tasks.
+GUIDELINES_PATH = Path(__file__).with_name("prompts") / "easy_read_guidelines.md"
+GUIDELINES = GUIDELINES_PATH.read_text(encoding="utf-8").strip()
+GUIDELINES_PREAMBLE = """아래 <작성 지침>은 사법정책연구원 『장애인 등을 위한 이해하기 쉬운(Easy-Read) 판결서 작성방안』(2024)의 요약입니다.
+쉬운 글을 쓰거나 고치는 모든 작업(초안, 더 쉽게 바꾸기, 문장 나누기, 용어 설명)과 사건 구조 정리, 그림 설계에서 이 지침을 따르세요.
+지침의 형식 규칙(글꼴, 글자 크기, 쪽수, "끝." 표시, 인쇄)과 "원문이 우선한다"는 안내 문구는 화면이 처리하므로 출력에 넣지 마세요.
+지침과 아래 작업 지시가 다르면 출력 JSON 스키마와 근거(quote) 규칙을 우선하고, 글의 내용·구조·문장·단어·숫자·그림 표현은 지침을 따르세요.
+"""
+
+
+def system_prompt(task: str) -> str:
+    """Role and safety rules, then the full guideline, then the per-call task last (keeps the cached prefix stable)."""
+    return SYSTEM + "\n" + GUIDELINES_PREAMBLE + "\n<작성 지침>\n" + GUIDELINES + "\n</작성 지침>\n\n작업: " + task
 
 
 def strict_schema(model):
@@ -64,7 +80,7 @@ class Provider:
                     "store": False,
                     "max_output_tokens": self.config.openai_max_output_tokens,
                     "text": {"format": {"type": "json_schema", "name": schema.__name__, "strict": True, "schema": strict_schema(schema)}},
-                    "input": [{"role": "system", "content": SYSTEM + "\n작업: " + task}, {"role": "user", "content": text}],
+                    "input": [{"role": "system", "content": system_prompt(task)}, {"role": "user", "content": text}],
                 })
                 response.raise_for_status()
                 result = response.json()

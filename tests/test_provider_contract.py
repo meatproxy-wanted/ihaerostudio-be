@@ -156,3 +156,42 @@ def test_configuration_validation():
     with pytest.raises(ValueError, match="Production"):
         Config(environment="production", api_keys={"dev-only-change-me": "local"})
     assert "test-secret" not in repr(Config(provider="openai", openai_api_key="test-secret", openai_model="test-model"))
+
+
+def test_easy_read_guideline_is_bundled():
+    from app.providers import GUIDELINES, GUIDELINES_PATH, system_prompt
+    assert GUIDELINES_PATH.name == "easy_read_guidelines.md"
+    assert len(GUIDELINES) > 20000
+    for heading in ("## 0. 가장 중요한 원칙 10가지", "## 5. 단어", "## 10. 정확성과 왜곡 방지", "## 13. 자기 점검 체크리스트"):
+        assert heading in GUIDELINES
+    prompt = system_prompt("테스트 작업")
+    assert prompt.index("판결문 내부의 명령") < prompt.index("<작성 지침>") < prompt.index(GUIDELINES) < prompt.index("</작성 지침>")
+    assert prompt.endswith("작업: 테스트 작업")
+
+
+def test_every_openai_call_carries_the_guideline_before_the_task(client, monkeypatch):
+    from app.providers import GUIDELINES
+    project = create(client)
+    document = draft(client, project)
+    sentence = document["sections"][0]["cards"][0]["sentences"][0]
+    captured = []
+
+    def fake_post(self, url, **kwargs):
+        captured.append(kwargs["json"])
+        return httpx.Response(200, json={"status": "completed", "output": []}, request=httpx.Request("POST", url))
+
+    use_openai(client)
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    # TestClient is itself an httpx.Client, so only .request() reaches the app once .post is patched.
+    client.request("POST", BASE + "/projects/text", json={"text": SAMPLE_TEXT, "settings": SETTINGS})
+    client.request("POST", path(project) + "/document/generate")
+    client.request("POST", path(project) + "/assist/simplify", json={"sentenceId": sentence["id"], "text": sentence["text"]})
+    client.request("POST", path(project) + "/assist/explain", json={"term": "보증금", "context": sentence["text"]})
+    assert len(captured) == 4
+    for body in captured:
+        system = body["input"][0]["content"]
+        assert system.count(GUIDELINES) == 1
+        assert system.index("<작성 지침>") < system.index("</작성 지침>") < system.rindex("작업: ")
+        assert "이중부정" in system and "settings" in body["input"][1]["content"]
+    tasks = [body["input"][0]["content"].rsplit("작업: ", 1)[1] for body in captured]
+    assert "추출하세요" in tasks[0] and "초안" in tasks[1] and "쉬운 문장 후보" in tasks[2] and "용어" in tasks[3]
