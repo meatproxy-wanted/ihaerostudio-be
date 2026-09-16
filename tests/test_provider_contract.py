@@ -154,7 +154,7 @@ def test_configuration_validation():
     with pytest.raises(ValueError, match="OPENAI_MAX_OUTPUT_TOKENS"):
         Config(openai_max_output_tokens=0)
     with pytest.raises(ValueError, match="Production"):
-        Config(environment="production", api_keys={"dev-only-change-me": "local"})
+        Config(environment="production", auth_mode="keys", api_keys={"dev-only-change-me": "local"})
     assert "test-secret" not in repr(Config(provider="openai", openai_api_key="test-secret", openai_model="test-model"))
 
 

@@ -1,6 +1,8 @@
 """Serve the current frontend ApiClient contract and the deployment health probe."""
+import hashlib
 import hmac
 import json
+import re
 from typing import Annotated
 
 from fastapi import Depends, FastAPI
@@ -14,6 +16,9 @@ from .providers import Provider
 from .store import Store, fail
 from .studio_api import register_studio
 from .studio_docs import API_DESCRIPTION, install_docs
+
+
+ANONYMOUS_TOKEN = re.compile(r"[A-Za-z0-9._~-]{16,200}")
 
 
 class UploadLimitMiddleware:
@@ -72,12 +77,17 @@ def create_app(config: Config | None = None):
             response.headers["Content-Security-Policy"] = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'"
         return response
 
-    bearer = HTTPBearer(auto_error=False, description="제작자 API 토큰. 개발 환경: dev-only-change-me")
+    bearer = HTTPBearer(auto_error=False, description="제작자 토큰. 익명 모드(기본)에서는 브라우저가 만든 방문자 ID처럼 16자 이상의 아무 토큰이나 자기 작업함이 됩니다.")
     def owner(credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)]):
         if credentials:
-            for token, maker in config.api_keys.items():
-                if hmac.compare_digest(credentials.credentials, token):
+            token = credentials.credentials
+            for key, maker in config.api_keys.items():
+                if hmac.compare_digest(token, key):
                     return maker
+            # A public demo without accounts: every well-formed token is its own workspace.
+            # The database keeps a hash, so a leaked table cannot be replayed as tokens.
+            if config.auth_mode == "anonymous" and ANONYMOUS_TOKEN.fullmatch(token):
+                return "anon-" + hashlib.sha256(token.encode()).hexdigest()[:32]
         fail(401, "unauthorized", "유효한 Bearer 토큰이 필요합니다.")
 
     @api.get("/health", include_in_schema=False)

@@ -5,7 +5,8 @@ services:
       - "127.0.0.1:8000:8000"
     environment:
       APP_ENV: production
-      API_KEYS: ${API_KEYS:?Set API_KEYS in .env first}
+      AUTH_MODE: ${AUTH_MODE:-anonymous}
+      API_KEYS: ${API_KEYS:-}
       AI_PROVIDER: ${AI_PROVIDER:-openai}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-}

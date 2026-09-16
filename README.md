@@ -29,9 +29,11 @@ Swagger에는 31개 동작별 호출 시점·요청 방법·저장 영향·다�
 문서 설명은 `app/studio_docs.py`, 필드·응답 스키마는 `app/studio_doc_schemas.py`, 가상 예시는
 `app/studio_doc_examples.py`에서 관리하며 실제 엔드포인트나 AI 출력 스키마를 변경하지 않습니다.
 
-Swagger의 Authorize에는 로컬 개발 토큰 `dev-only-change-me`를 입력합니다.
-이 토큰은 백엔드 작성자 식별용이며 별도 로그인 화면이나 로그인 API는 없습니다.
-공개 읽기에는 인증이 필요하지 않습니다. 운영 토큰은 `API_KEYS`로 설정합니다.
+인증은 두 모드입니다. 기본값인 익명 모드(`AUTH_MODE=anonymous`)는 16자 이상의 아무 Bearer 토큰이나 받아들여
+그 토큰만의 작업함을 만듭니다. 프론트는 브라우저마다 만든 방문자 ID를 보내므로 로그인 없이 각자 체험할 수 있고,
+서버는 토큰의 해시만 저장합니다. `AUTH_MODE=keys`로 바꾸면 `API_KEYS`에 등록한 토큰만 통과합니다.
+등록한 토큰은 두 모드 모두에서 그 제작자로 인식되고, Swagger의 Authorize에는 토큰 값만 입력합니다.
+별도 로그인 화면이나 로그인 API는 없으며, 공개 읽기에는 인증이 필요하지 않습니다.
 
 FE 원격 저장소에는 변경을 올리지 않습니다. 로컬 FE의 API 구현만 HTTP로 연결해 테스트하거나,
 [테스트 복사본 준비 스크립트](scripts/prepare_frontend_test.py)를 사용할 수 있습니다.

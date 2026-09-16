@@ -25,7 +25,9 @@
 | 가상 샘플 | `GET /demo/sample-text` |
 | 개발 초기화 | `POST /demo/reset` (운영 환경은 403) |
 
-공개 읽기 API 외에는 작성자 Bearer 토큰이 필요합니다. AI 키는 BE 환경변수에만 저장합니다.
+공개 읽기 API 외에는 Bearer 토큰이 필요합니다. 기본값인 익명 모드(`AUTH_MODE=anonymous`)에서는
+브라우저가 만든 방문자 ID처럼 16자 이상의 아무 토큰이나 자기 작업함이 되고, `AUTH_MODE=keys`에서는
+`API_KEYS`에 등록한 토큰만 통과합니다. AI 키는 BE 환경변수에만 저장합니다.
 FE 원격 저장소는 변경하지 않았습니다. 로컬 FE는 HTTP transport를 연결해 테스트할 수 있습니다.
 원격 FE의 `createMockApi()`는 BE 배포만으로 전환되지 않으며 API 구현 선택을 바꿔야 합니다.
 

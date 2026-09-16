@@ -6,7 +6,10 @@ from dataclasses import dataclass, field
 @dataclass
 class Config:
     db_path: str = field(default_factory=lambda: os.getenv("DATABASE_PATH", "data/studio.sqlite3"))
-    api_keys: dict[str, str] = field(default_factory=lambda: json.loads(os.getenv("API_KEYS", '{"dev-only-change-me":"maker-local"}')))
+    api_keys: dict[str, str] = field(default_factory=lambda: json.loads(os.getenv("API_KEYS") or '{"dev-only-change-me":"maker-local"}'))
+    # anonymous: any well-formed bearer token names its own workspace (a public demo without accounts).
+    # keys: only tokens registered in API_KEYS are accepted.
+    auth_mode: str = field(default_factory=lambda: os.getenv("AUTH_MODE", "anonymous"))
     provider: str = field(default_factory=lambda: os.getenv("AI_PROVIDER", "demo"))
     openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""), repr=False)
     openai_model: str = field(default_factory=lambda: os.getenv("OPENAI_MODEL", ""))
@@ -29,5 +32,7 @@ class Config:
             raise ValueError("OPENAI_MAX_OUTPUT_TOKENS must be between 1 and 100000")
         if not isinstance(self.api_keys, dict) or not self.api_keys or any(not k or not isinstance(v, str) or not v for k, v in self.api_keys.items()):
             raise ValueError("API_KEYS must map nonempty bearer tokens to maker IDs")
-        if self.environment == "production" and any(len(k) < 32 or k == "dev-only-change-me" for k in self.api_keys):
+        if self.auth_mode not in {"anonymous", "keys"}:
+            raise ValueError("AUTH_MODE must be anonymous or keys")
+        if self.environment == "production" and self.auth_mode == "keys" and any(len(k) < 32 or k == "dev-only-change-me" for k in self.api_keys):
             raise ValueError("Production requires API keys of at least 32 characters")
