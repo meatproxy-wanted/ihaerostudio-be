@@ -77,3 +77,23 @@ def test_whole_workflow_runs_against_the_remote_database(remote):
     with TestClient(create_app(client.app.state.config), headers=AUTH) as restarted:
         assert restarted.get(path(project) + "/document").json()["title"] == doc["title"]
         assert [p["id"] for p in restarted.get(BASE + "/projects").json()] == [project["id"]]
+
+
+def test_character_appearance_cache_is_scoped_and_persistent_on_turso(remote):
+    from app.studio_identity import CharacterIdentity
+    from test_studio_generation import PromptProvider
+
+    client, _, _ = remote
+    provider = PromptProvider()
+    store = client.app.state.studio_generation.store
+    reference = {"partyId": "a", "imageNumber": 1, "assetId": "asset"}
+    first = CharacterIdentity(store, provider)
+    expected = first.describe("project", "alice", reference, b"\x89PNG-one")
+    restarted = CharacterIdentity(store, provider)
+    assert restarted.describe("project", "alice", reference, b"\x89PNG-one") == expected
+    assert provider.profile_calls == 1
+    restarted.describe("project", "bob", reference, b"\x89PNG-one")
+    restarted.describe("other-project", "alice", reference, b"\x89PNG-one")
+    restarted.describe("project", "alice", {**reference, "assetId": "other"}, b"\x89PNG-one")
+    restarted.describe("project", "alice", reference, b"\x89PNG-two")
+    assert provider.profile_calls == 5
