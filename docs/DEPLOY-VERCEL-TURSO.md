@@ -1,7 +1,5 @@
 # Vercel + Turso 배포 매뉴얼
 
-> **상태: 0단계(코드 준비)가 아직 진행 중입니다.** 0단계가 끝나기 전에는 1단계부터 따라 해도 배포가 되지 않습니다. 0단계가 끝나면 이 안내를 지웁니다.
-
 이 문서는 백엔드(`ihaerostudio-be`)와 프론트(`ihaerostudio-fe`)를 각각 Vercel 프로젝트로 올리고, 자료 저장소로 Turso를 쓰는 절차입니다. 로그인 없는 공개 체험용 구성(익명 모드)을 전제로 합니다.
 
 ## 구성 요약
@@ -15,15 +13,15 @@
 
 브라우저는 프론트 도메인을 열고, 프론트가 백엔드 도메인의 `/api/studio`를 직접 호출합니다(CORS). 그림은 백엔드가 Turso에 저장하고 `/api/studio/assets/{id}` 주소로 내줍니다.
 
-## 0단계. 코드 준비 (Claude가 진행)
+## 0단계. 코드 준비 (완료)
 
-배포 전에 백엔드에 다음이 들어갑니다. 끝나면 이 절의 항목이 체크로 바뀝니다.
+백엔드에 다음이 들어가 있습니다. 따로 할 일은 없습니다.
 
-- [ ] 저장소 분기: `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`이 있으면 Turso로, 없으면 지금처럼 로컬 SQLite 파일로 연결
-- [ ] 그림을 자료 JSON에서 분리해 별도 테이블에 저장하고 `GET /api/studio/assets/{id}`로 제공. 문서·게시본·독자 응답의 `src`는 그 주소가 됨(응답 4.5MB 제한 대응)
-- [ ] `vercel.json`: 함수 최대 시간 300초, 테스트·문서 폴더 번들 제외
-- [ ] `PUBLIC_BASE_URL`(선택): 그림 주소를 만들 때 쓰는 백엔드 공개 주소. 비우면 Vercel이 주는 프로젝트 주소를 씀
-- [ ] 로컬 개발과 pytest는 변함없이 SQLite 파일로 동작
+- [x] 저장소 분기: `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`이 있으면 Turso로, 없으면 지금처럼 로컬 SQLite 파일로 연결. `/health`의 `storage`가 `turso` 또는 `sqlite`로 알려 줌
+- [x] 그림을 자료 JSON에서 분리해 별도 테이블에 저장하고 `GET /api/studio/assets/{id}`로 제공. 문서·게시본·독자 응답의 `src`는 그 주소(응답 4.5MB 제한 대응). 프론트는 바꿀 것 없음
+- [x] `vercel.json`: 함수 최대 시간 300초, 테스트·문서 폴더 번들 제외
+- [x] `PUBLIC_BASE_URL`(선택): 그림 주소를 만들 때 쓰는 백엔드 공개 주소. 비우면 Vercel이 주는 프로젝트 주소를 씀. 그림 URL에 저장되므로 자료를 만들기 전에 정해야 함
+- [x] 로컬 개발과 pytest는 변함없이 SQLite 파일로 동작하고, Turso 경로도 테스트로 확인함
 
 ## 1단계. 계정과 권한
 
@@ -47,6 +45,9 @@
 | `APP_ENV` | `production` | |
 | `AUTH_MODE` | `anonymous` | 기본값과 같지만 명시 |
 | `CORS_ORIGINS` | 일단 `http://localhost:3000` | 4단계에서 프론트 주소로 바꿈 |
+| `PUBLIC_BASE_URL` | (비움) | 커스텀 도메인을 쓸 때만 `https://그도메인`. 비우면 프로젝트 주소 |
+
+`TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`은 3단계에서 자동으로 들어옵니다.
 
 4. **Deploy**를 누릅니다. 첫 배포는 Turso가 아직 없어서 시작에 실패하거나 저장이 안 될 수 있습니다. 3단계 뒤 다시 배포합니다.
 
@@ -56,7 +57,7 @@
 2. 데이터베이스 이름을 정하고(예: `ihaerostudio`), 위치는 Vercel 함수 리전과 가까운 곳으로 고릅니다. Hobby의 기본 함수 리전은 미국 동부(`iad1`)이므로 AWS `us-east-1` 계열을 고릅니다. 플랜은 Free.
 3. **Connect Project**에서 백엔드 프로젝트를 선택합니다. 그러면 `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`이 백엔드 환경 변수에 자동으로 들어갑니다. 백엔드 코드는 이 두 이름을 그대로 읽습니다.
 4. 백엔드를 **Redeploy**합니다(Deployments → 최신 항목 → Redeploy). 테이블은 서버가 시작할 때 스스로 만듭니다.
-5. 확인: 브라우저에서 `https://<백엔드주소>/health`를 열어 `"ai_provider":"openai"`가 보이면 됩니다. `https://<백엔드주소>/docs`에서 Swagger도 열립니다.
+5. 확인: 브라우저에서 `https://<백엔드주소>/health`를 열어 `"ai_provider":"openai"`와 `"storage":"turso"`가 보이면 됩니다. `"storage":"sqlite"`면 Turso 변수가 안 들어간 것입니다. `https://<백엔드주소>/docs`에서 Swagger도 열립니다.
 
 CLI로 만들고 싶다면:
 
@@ -101,7 +102,7 @@ turso db tokens create ihaerostudio
 - **콜드 스타트**: 한동안 요청이 없으면 첫 요청이 몇 초 느립니다. 시연 직전에 한 번 열어 두세요.
 - **긴 판결문**: 분석·초안이 300초를 넘기면 504가 납니다. Luna 기준 샘플은 25초 안팎이지만, 긴 문서나 큰 모델은 Pro 플랜의 `maxDuration` 상향이 필요할 수 있습니다.
 - **자료 정리**: 지운 자료도 소프트 삭제라 Turso에 남습니다. 오래된 자료를 지우는 정리 작업은 아직 없으니 필요해지면 추가합니다.
-- **커스텀 도메인**: 각 프로젝트 Settings → Domains에서 붙입니다. 붙이면 `NEXT_PUBLIC_STUDIO_API_URL`과 `CORS_ORIGINS`도 새 주소로 바꾸고 재배포합니다.
+- **커스텀 도메인**: 각 프로젝트 Settings → Domains에서 붙입니다. 붙이면 `NEXT_PUBLIC_STUDIO_API_URL`과 `CORS_ORIGINS`도 새 주소로 바꾸고 재배포합니다. 백엔드 도메인을 바꾸면 `PUBLIC_BASE_URL`도 맞추세요. 이전 주소로 저장된 그림은 이전 주소가 살아 있는 동안만 보입니다.
 - **미리보기 배포 보호**: Vercel은 미리보기 배포에 로그인을 요구할 수 있습니다. 공개 링크로 시연할 때는 Production 주소를 쓰세요.
 
 ## 문제가 생기면
@@ -115,3 +116,4 @@ turso db tokens create ihaerostudio
 | 배포 로그에 `OPENAI_API_KEY is required` | 환경 변수 누락 | 변수를 넣고 재배포 |
 | 배포는 됐는데 자료가 사라짐 | Turso 미연결로 임시 디스크 사용 | 3단계 확인 후 재배포 |
 | PDF 업로드 413 | 4.5MB 초과 | 파일을 줄이거나 텍스트로 붙여넣기 |
+| 그림이 깨져 보임 | 그림 주소의 도메인이 지금 백엔드와 다름 | `PUBLIC_BASE_URL`을 확인하고, 자료를 새로 만들어 그림을 다시 생성 |
