@@ -112,12 +112,9 @@ class StudioGeneration:
             return self.result(state, job["asset_id"])
         try:
             if job["status"] == "identity_rejected":
-                if job.get("identity_attempt", 0) >= 1:
-                    fail(502, "image_identity_unresolved", "보정 후에도 인물 외형이 기준과 달라 후보에서 제외했어요. 기준 그림이나 장면 설명을 수정해 주세요. 추가 자동 생성은 하지 않아요.")
-                # A fresh caller retry authorizes one bounded correction, never an endless regeneration loop.
-                job.update(status="planned", identity_attempt=1, correction=job["identity_check"]["correction"],
-                           seed=secrets.randbits(48))
-                job.pop("identity_check", None)
+                # Older versions rejected a completed paid job. Retrieve that output,
+                # including the last correction attempt, without another submission.
+                job["status"] = "succeeded"
                 self.persist(job)
             if job["status"] == "pending":
                 capacity(state)
@@ -225,24 +222,6 @@ class StudioGeneration:
                         fail(502, "image_missing_output", "Comfy 작업에 완성된 그림이 없어요. 서버의 생성 작업을 확인해 주세요.")
                     output = parsed["outputs"][0]
                     image = self.download(output.asset_id, job["provider_job_id"])
-                    if references:
-                        digest = hashlib.sha256(image).hexdigest()
-                        check = job.get("identity_check")
-                        if not check or check.get("digest") != digest:
-                            check = CharacterIdentity(self.store, self.provider).check(job["identity_profiles"], image, context).model_dump()
-                            check["digest"] = digest
-                            job["identity_check"] = check
-                            self.persist(job)
-                        if not check["consistent"] or check["issues"]:
-                            job.setdefault("rejected_attempts", []).append({"provider_job_id": job["provider_job_id"],
-                                "attempt": job.get("identity_attempt", 0), "check": check})
-                            job["status"] = "identity_rejected"
-                            self.persist(job)
-                            code = "image_identity_unresolved" if job.get("identity_attempt", 0) else "image_identity_mismatch"
-                            fail(502, code, "인물의 얼굴·수염·옷이 기준 그림과 달라 후보에서 제외했어요. " +
-                                 ("기준 그림이나 장면 설명을 수정해 주세요. 추가 자동 생성은 하지 않아요." if job.get("identity_attempt", 0)
-                                  else "다시 시도하면 한 번만 보정 생성해요."))
-                        job["plan"]["alt"] = check["alt"]
                     return self.finish(job, project_id, owner, image)
                 if job["status"] in {"failed", "canceled", "expired"}:
                     fail(502, "image_generation_failed", "Comfy 그림 생성이 완료되지 않았어요. 서버의 생성 작업을 확인해 주세요.")

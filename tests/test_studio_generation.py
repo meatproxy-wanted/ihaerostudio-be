@@ -396,63 +396,39 @@ def test_decision_workflow_keeps_order_separate_from_completed_payment(setup):
     assert "Mandatory court-decision scene constraint" in prompt and "Keep their hands apart" in prompt
 
 
-def test_inconsistent_candidate_is_hidden_and_one_correction_is_allowed(setup):
-    client, service, project, _, _, control = setup
-    attach_characters(setup)
-    service.provider.identity_ok = False
-    response = request_image(setup)
-    assert response.status_code == 502 and response.json()["detail"]["code"] == "image_identity_mismatch"
-    assert "candidates" not in response.json()
-    assert len(service.store.get(project["id"], "alice")[0]["assets"]) == 2  # no inconsistent candidate stored
-    service.provider.identity_ok = True
-    result = request_image(setup)
-    assert result.status_code == 200, result.text
-    assert result.json()["candidates"][0]["alt"] == "실제 생성 결과를 확인한 설명"
-    assert service.provider.profile_calls == 2 and service.provider.calls == 1
-    assert len(submissions(control)) == 2
-    first, corrected = submissions(control)
-    assert corrected.headers["Idempotency-Key"] == first.headers["Idempotency-Key"] + "-identity-1"
-    graph = json.loads(corrected.content)["workflow"]
-    text = graph["4"]["inputs"]["text"]
-    assert "clean-shaven" in text.lower() and "gray shirt" in text and "Restore each character" in text
-    assert request_image(setup).json() == result.json()
-    assert len(submissions(control)) == 2
-
-
-def test_inconsistent_correction_stops_without_third_paid_job(setup):
-    _, service, _, _, _, control = setup
-    attach_characters(setup)
-    service.provider.identity_ok = False
-    assert request_image(setup).json()["detail"]["code"] == "image_identity_mismatch"
-    assert request_image(setup).json()["detail"]["code"] == "image_identity_unresolved"
-    assert request_image(setup).json()["detail"]["code"] == "image_identity_unresolved"
-    assert len(submissions(control)) == 2 and service.provider.check_calls == 2
-
-
-def test_uncertain_correction_is_not_resubmitted(setup):
-    _, service, _, _, _, control = setup
-    attach_characters(setup)
-    service.provider.identity_ok = False
-    assert request_image(setup).json()["detail"]["code"] == "image_identity_mismatch"
-    control["submit_error"] = "timeout"
-    assert request_image(setup).status_code == 503
-    assert request_image(setup).json()["detail"]["code"] == "image_submission_unknown"
-    assert len(submissions(control)) == 2
-
-
-def test_identity_check_failure_resumes_same_paid_job(setup):
+def test_generated_candidate_is_returned_without_identity_check(setup):
     _, service, _, _, _, control = setup
     attach_characters(setup)
     original = service.provider.call
-    def fail_check(task, payload, schema, **kwargs):
-        if schema.__name__ == "SceneIdentity":
-            raise HTTPException(504, {"code": "ai_timeout", "message": "test"})
+    def no_check(task, payload, schema, **kwargs):
+        assert schema.__name__ != "SceneIdentity"
         return original(task, payload, schema, **kwargs)
-    service.provider.call = fail_check
-    assert request_image(setup).status_code == 504
-    service.provider.call = original
-    assert request_image(setup).status_code == 200
-    assert len(submissions(control)) == 1 and service.provider.profile_calls == 2
+    service.provider.call = no_check
+    response = request_image(setup)
+    assert response.status_code == 200 and response.json()["candidates"]
+    assert request_image(setup).json() == response.json()
+    assert len(submissions(control)) == 1
+
+
+@pytest.mark.parametrize("attempt", [0, 1])
+def test_previously_rejected_job_returns_existing_output_without_paid_retry(setup, attempt):
+    _, service, project, _, _, control = setup
+    attach_characters(setup)
+    download = service.download
+    def interrupted(*args):
+        raise HTTPException(503, {"code": "download_interrupted"})
+    service.download = interrupted
+    assert request_image(setup).status_code == 503
+    with service.store.store.connect() as db:
+        row = db.execute("SELECT id,body FROM studio_image_jobs WHERE project_id=?", (project["id"],)).fetchone()
+        job = json.loads(row["body"])
+        job.update(status="identity_rejected", identity_attempt=attempt,
+                   identity_check={"consistent": False, "issues": ["mismatch"], "correction": "old correction"})
+        db.execute("UPDATE studio_image_jobs SET body=? WHERE id=?", (json.dumps(job), row["id"]))
+    service.download = download
+    response = request_image(setup)
+    assert response.status_code == 200 and response.json()["candidates"]
+    assert len(submissions(control)) == 1
 
 
 def test_multiple_people_reference_is_rejected_before_comfy_submission(setup):
