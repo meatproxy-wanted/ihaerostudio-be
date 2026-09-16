@@ -256,7 +256,7 @@ def require_document(state):
     return state["document"]
 
 
-LONG_SENTENCE = 45
+LONG_SENTENCE = 60
 
 
 def review_items(state):

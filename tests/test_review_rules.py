@@ -25,7 +25,7 @@ def test_only_the_three_rules_fire():
         sentence("피고는 돈을 줘야 해요."),                       # claim card, unverified, no party: no item
         sentence("근거 없는 문장이에요.", anchors=()),           # no-anchor
         sentence("피고는 2,000만 원을 줘야 해요."),               # numbers (2000 not in source)
-        sentence("이 문장은 일부러 마흔다섯 글자보다 길게 써서 살펴보기 항목이 생기는지 확인하는 문장이에요."),  # long
+        sentence("이 문장은 일부러 예순 글자보다 길게 써서 살펴보기 항목이 생기는지 확인하려고 만든, 한눈에 읽기에는 조금 긴 문장이에요."),  # long
     ]))
     assert [(i["category"], i["level"]) for i in items] == [
         ("no-anchor", "required"), ("numbers", "suggested"), ("long-sentence", "suggested")]

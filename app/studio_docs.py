@@ -281,7 +281,7 @@ describe("latest_review", "최근 점검 조회 — 저장된 검토 결과 또�
     "결과가 null이거나 최신 내용 점검이 필요하면 POST review/run을 호출합니다. level=required와 dismissal=null인 항목을 확인해야 검토를 완료할 수 있습니다.", nullable(ref("StudioReviewRun")), ex.REVIEW, errors="not_found", alternatives={"not_checked": ("아직 점검하지 않았거나 점검이 해제됨", None)})
 describe("run_review", "문서 점검 실행 — 원문 근거·숫자·문장 길이 규칙 검사",
     "저장된 편집 문서를 검토하거나 편집 후 다시 점검할 때 호출합니다.", "project_id만 전달합니다. 요청 본문은 없으며 초안 문서가 먼저 존재해야 합니다. 편집 중 내용은 PUT document 저장을 마친 뒤 점검합니다.",
-    "{run, project}를 반환합니다. run.items에는 원문 근거가 없는 문장(no-anchor, required), 원문에 없는 숫자가 든 문장(numbers, suggested), 45자를 넘는 문장(long-sentence, suggested)만 들어갑니다. required는 검토 완료를 막고 suggested는 권고 항목입니다.",
+    "{run, project}를 반환합니다. run.items에는 원문 근거가 없는 문장(no-anchor, required), 원문에 없는 숫자가 든 문장(numbers, suggested), 60자를 넘는 문장(long-sentence, suggested)만 들어갑니다. required는 검토 완료를 막고 suggested는 권고 항목입니다.",
     "OpenAI나 Comfy를 호출하지 않는 규칙 점검입니다. 누가 말했는지, 주장과 판단의 구분, 그림의 뜻은 판정하지 않으며 최종 체크리스트에서 제작자가 직접 확인합니다. 점검 결과를 저장하고 기존 최종 검토 완료를 해제합니다. 같은 문장·근거의 확인 기록은 key가 같아 다시 점검해도 유지됩니다.",
     "각 항목의 target 위치를 보여 주고 원문·그림을 대조하세요. 문제가 없다고 판단한 항목은 review/dismiss, 수정이 필요하면 문서 저장 후 재점검합니다.", ref("StudioReviewResult"), {"run": ex.REVIEW, "project": ex.REVIEW_PROJECT}, errors="not_found version_conflict")
 
