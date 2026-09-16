@@ -18,8 +18,6 @@ class PromptProvider:
     calls = 0
 
     def call(self, task, context, schema, *, images=()):
-        if schema.__name__ == "FaceVisibility":
-            return schema(visibleFaces=[getattr(self, "face_visible", True)], alt="얼굴이 보이는 인물")
         if schema.__name__ == "CharacterAppearance":
             self.profile_calls = getattr(self, "profile_calls", 0) + 1
             assert len(images) == 1 and images[0].startswith(b"\x89PNG")
@@ -457,26 +455,14 @@ def test_identity_check_failure_resumes_same_paid_job(setup):
     assert len(submissions(control)) == 1 and service.provider.profile_calls == 2
 
 
-def test_hidden_face_reference_is_rejected_before_comfy_submission(setup):
+def test_multiple_people_reference_is_rejected_before_comfy_submission(setup):
     _, service, _, _, _, control = setup
     attach_characters(setup)
     original = service.provider.call
     def hidden_face(task, payload, schema, **kwargs):
         result = original(task, payload, schema, **kwargs)
-        return result.model_copy(update={"faceVisible": False}) if schema.__name__ == "CharacterAppearance" else result
+        return result.model_copy(update={"personCount": 2}) if schema.__name__ == "CharacterAppearance" else result
     service.provider.call = hidden_face
     response = request_image(setup)
     assert response.status_code == 422 and response.json()["detail"]["code"] == "character_reference_unclear"
     assert not submissions(control) and service.provider.calls == 0
-
-
-
-def test_no_reference_rear_view_is_rejected_and_corrected_once(setup):
-    _, service, _, _, _, control = setup
-    service.provider.face_visible = False
-    assert request_image(setup).json()["detail"]["code"] == "image_identity_mismatch"
-    service.provider.face_visible = True
-    assert request_image(setup).status_code == 200
-    prompt = json.loads(submissions(control)[1].content)["workflow"]["4"]["inputs"]["clip_l"]
-    assert "Camera directly in front" in prompt
-    assert len(submissions(control)) == 2

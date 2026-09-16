@@ -8,8 +8,8 @@ from .video_workflows import validate_graph
 
 ALLOWED = {"UNETLoader", "DualCLIPLoader", "VAELoader", "CLIPTextEncodeFlux", "ConditioningZeroOut",
            "EmptySD3LatentImage", "KSampler", "VAEDecode", "SaveImage"}
-PRESET = "flux-schnell-visible-faces-v3"
-REFERENCE_PRESET = "flux2-klein-9b-verified-identity-v4"
+PRESET = "flux-schnell-illustration-v2"
+REFERENCE_PRESET = "flux2-klein-9b-verified-identity-v3"
 VISIBLE_FACES = (
     " If people are depicted, show each person's clearly visible face from the front or a three-quarter front view. "
     "Keep eyes, nose and mouth visible and unobstructed, with the whole head inside the frame. "
