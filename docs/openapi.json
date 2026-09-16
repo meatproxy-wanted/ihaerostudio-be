@@ -4241,7 +4241,7 @@
             }
           },
           "422": {
-            "description": "발생 조건과 처리 방법:\n\n- **invalid_image**: 그림을 읽거나 연결하지 못했어요. 유효한 이미지 파일인지, 이 프로젝트에서 생성·업로드한 src와 문서 imageId를 사용하는지 확인합니다.\n\n- **unsupported_image**: PNG, JPEG, WebP만 지원합니다. 래스터 이미지를 지원 형식으로 변환합니다. SVG 업로드는 별도 안전성 검사를 적용합니다.\n\n\n요청 형식 검증 실패 시 detail은 객체 대신 오류 위치(loc)·메시지(msg)·유형(type)을 담은 배열입니다.",
+            "description": "발생 조건과 처리 방법:\n\n- **invalid_image**: 그림을 읽거나 연결하지 못했어요. 유효한 이미지 파일인지, 이 프로젝트에서 생성·업로드한 src와 문서 imageId를 사용하는지 확인합니다.\n\n- **unsupported_image**: PNG, JPEG, WebP만 지원합니다. 래스터 이미지를 지원 형식으로 변환합니다. SVG 업로드는 별도 안전성 검사를 적용합니다.\n\n- **character_reference_invalid**: 등장인물 기준 그림을 사용할 수 없어요. 등장인물 카드에 이 자료의 PNG·JPEG·WebP 그림을 적용하고 저장합니다. SVG 기준 그림, 사라진 파일, 다른 자료의 자산은 사용할 수 없습니다.\n\n- **character_reference_ambiguous**: 같은 등장인물에 서로 다른 그림이 연결돼 있어요. 동일 partyId의 등장인물 카드가 여러 개라면 동일한 기준 그림으로 맞춥니다.\n\n- **character_reference_limit**: 한 장의 그림에는 등장인물 기준 그림을 6개까지 사용할 수 있어요. 문서의 등장인물 기준 그림을 최대 6개로 조정합니다. 서버가 임의로 기준 그림을 누락하지 않습니다.\n\n\n요청 형식 검증 실패 시 detail은 객체 대신 오류 위치(loc)·메시지(msg)·유형(type)을 담은 배열입니다.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4272,6 +4272,36 @@
                       "detail": {
                         "code": "unsupported_image",
                         "message": "PNG, JPEG, WebP만 지원합니다."
+                      }
+                    }
+                  },
+                  "character_reference_invalid": {
+                    "summary": "character_reference_invalid",
+                    "description": "등장인물 카드에 이 자료의 PNG·JPEG·WebP 그림을 적용하고 저장합니다. SVG 기준 그림, 사라진 파일, 다른 자료의 자산은 사용할 수 없습니다.",
+                    "value": {
+                      "detail": {
+                        "code": "character_reference_invalid",
+                        "message": "등장인물 기준 그림을 사용할 수 없어요."
+                      }
+                    }
+                  },
+                  "character_reference_ambiguous": {
+                    "summary": "character_reference_ambiguous",
+                    "description": "동일 partyId의 등장인물 카드가 여러 개라면 동일한 기준 그림으로 맞춥니다.",
+                    "value": {
+                      "detail": {
+                        "code": "character_reference_ambiguous",
+                        "message": "같은 등장인물에 서로 다른 그림이 연결돼 있어요."
+                      }
+                    }
+                  },
+                  "character_reference_limit": {
+                    "summary": "character_reference_limit",
+                    "description": "문서의 등장인물 기준 그림을 최대 6개로 조정합니다. 서버가 임의로 기준 그림을 누락하지 않습니다.",
+                    "value": {
+                      "detail": {
+                        "code": "character_reference_limit",
+                        "message": "한 장의 그림에는 등장인물 기준 그림을 6개까지 사용할 수 있어요."
                       }
                     }
                   },
@@ -4634,7 +4664,7 @@
             }
           }
         },
-        "description": "### 프론트 호출 시점\n\n편집기의 카드 → 그림 넣기/바꾸기 → 그림 후보 보기에서 호출합니다.\n\n### 요청 방법\n\nJSON {cardId}를 보냅니다. 카드 문장·원문 근거·당사자 표시 이름은 저장된 문서에서 읽으므로 자동 저장 완료 후 요청하세요. 프롬프트·워크플로·jobId는 FE에서 보내지 않습니다.\n\n### 응답 해석\n\n{candidates:[{src,alt,meaning}]}를 반환합니다. 실제 AI 모드에서는 해당 카드의 Comfy 결과 1장이 먼저, 업로드 자산이 이어집니다. 생성 결과 src는 서버가 보관한 PNG의 주소(/api/studio/assets/{id})입니다. 예시의 작은 PNG는 형식 설명용이며 실제 생성 품질 예시가 아닙니다.\n\n### 저장·버전·외부 호출 영향\n\nOpenAI가 장면·대체텍스트·의미 설명을 만들고 고정 Flux Schnell 워크플로로 768×768 한 장을 생성합니다. 같은 카드 내용은 저장/진행 작업을 재사용합니다. 카드 내용이 바뀌면 새 생성이 될 수 있습니다. 데모는 업로드 후보만 반환합니다. 후보는 프로젝트 자산으로 보관하지만 문서에 자동 연결하지 않습니다.\n\nComfy 완료 대기 90초 후 image_in_progress이면 같은 요청으로 이어서 확인합니다. 접수 불확실·실행 실패·만료는 새 유료 작업을 자동 제출하지 않습니다. 생성 중 카드가 바뀌면 image_card_changed로 오래된 후보 적용을 막습니다. 브라우저 요청 취소가 제공자 작업 취소를 뜻하지는 않습니다.\n\n### 다음 동작\n\n사용자가 고른 후보에 FE 그림 ID와 source=library를 부여하고 document.images에 넣습니다. 대상 card.imageId를 연결한 뒤 PUT document로 저장하세요. alt와 meaning은 실제 그림과 대조합니다. 편집 중 FE가 이전 후보를 캐시했다면 최신 내용 저장 후 새 요청이 실제 전송되도록 새로고침합니다.\n\n**인증:** 제작자 Bearer 토큰이 필요합니다. 다른 제작자의 자료에는 접근할 수 없습니다."
+        "description": "### 프론트 호출 시점\n\n편집기의 카드 → 그림 넣기/바꾸기 → 그림 후보 보기에서 호출합니다.\n\n### 요청 방법\n\nJSON {cardId}를 보냅니다. 카드 문장·원문 근거·당사자 표시 이름은 저장된 문서에서 읽으므로 자동 저장 완료 후 요청하세요. 프롬프트·워크플로·jobId는 FE에서 보내지 않습니다.\n\n### 응답 해석\n\n{candidates:[{src,alt,meaning}]}를 반환합니다. 실제 AI 모드에서는 해당 카드의 Comfy 결과 1장이 먼저, 업로드 자산이 이어집니다. 생성 결과 src는 서버가 보관한 PNG의 주소(/api/studio/assets/{id})입니다. 예시의 작은 PNG는 형식 설명용이며 실제 생성 품질 예시가 아닙니다.\n\n### 저장·버전·외부 호출 영향\n\n먼저 등장인물(role=person, partyId 지정) 카드에서 그림을 생성·선택하고 PUT document로 저장하세요. 결론·주장·판단·배경 그림을 요청하면 서버가 document.images와 인물 카드의 imageId를 연결해 저장된 기준 그림을 찾습니다. 후보만 생성하고 적용하지 않은 그림은 기준으로 쓰지 않습니다.\n\nOpenAI에는 대상 문장·원문 근거와 등장인물의 이름·역할·저장된 설명, 기준 그림 번호를 함께 전달합니다. 누가 누구에게 무엇을 해야 하는지와 주장·판단·결정을 구분해 장면을 설계합니다. 실제 기준 이미지 픽셀은 Comfy에 업로드하여 Flux.2 Klein 4B의 다중 이미지 입력으로 전달합니다. PNG·JPEG·WebP 최대 6개를 사용하며 외형·옷·색을 유지하도록 지시합니다. 그림은 768×768 한 장입니다. 인물 카드 자체를 생성할 때나 저장된 기준 그림이 없을 때는 기존 Flux Schnell 방식입니다. 외형 일치나 관계의 정확성을 자동 보증하지는 않습니다.\n\n같은 카드와 등장인물 기준은 저장/진행 작업을 재사용합니다. 인물 설명·역할·기준 그림을 바꾸면 다음 요청은 새 생성이 될 수 있고, 이전 결론 그림을 자동 교체하지 않습니다. 데모는 업로드 후보만 반환합니다. 후보는 프로젝트 자산으로 보관하지만 문서에 자동 연결하지 않습니다.\n\nComfy 완료 대기 90초 후 image_in_progress이면 같은 요청으로 이어서 확인합니다. 접수 불확실·실행 실패·만료는 새 유료 작업을 자동 제출하지 않습니다. 생성 중 카드나 등장인물 기준이 바뀌면 image_card_changed로 오래된 후보 적용을 막습니다. 브라우저 요청 취소가 제공자 작업 취소를 뜻하지는 않습니다.\n\n### 다음 동작\n\n사용자가 고른 후보에 FE 그림 ID와 source=library를 부여하고 document.images에 넣습니다. 대상 card.imageId를 연결한 뒤 PUT document로 저장하세요. alt와 meaning은 실제 그림과 대조합니다. 편집 중 FE가 이전 후보를 캐시했다면 최신 내용 저장 후 새 요청이 실제 전송되도록 새로고침합니다.\n\n**인증:** 제작자 Bearer 토큰이 필요합니다. 다른 제작자의 자료에는 접근할 수 없습니다."
       }
     },
     "/api/studio/projects/{project_id}/assist/upload-image": {

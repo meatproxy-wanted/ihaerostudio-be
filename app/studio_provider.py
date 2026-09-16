@@ -77,6 +77,10 @@ def draft(provider, state):
             "카드별 문장을 나누고 origin=ai-draft, verified=false로 설정하세요. "
             "문장마다 anchors에 그 문장의 바탕이 된 원문 quote를 붙이세요. "
             "images=[], imageId=null로 두세요. 인물·주장 카드의 partyId는 partyNames와 연결하세요. "
+            "structure.parties를 공통 인물 기준으로 삼아 partyNames의 partyId와 displayName을 그대로 유지하세요. "
+            "등장인물마다 role=person 카드를 만들고 정확한 partyId와 원문에 근거한 역할·관계를 설명하세요. "
+            "결론과 이유에서도 같은 인물을 같은 이름으로 부르고, 누가 누구에게 무엇을 해야 하는지 주체·대상을 명확히 쓰세요. "
+            "원문에 없는 인물이나 관계를 새로 만들거나 주장 속 관계를 인정된 사실로 바꾸지 마세요. "
             "중요한 주장·판단·결정을 빠짐없이 보존하세요.",
             {"source": state["source"], "structure": structure, "settings": project["settings"]}, wire.AiDraftContent).model_dump()
         return wire.DraftContent.model_validate(resolve_draft_quotes(quoted, state["source"])).model_dump()
