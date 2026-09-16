@@ -108,6 +108,7 @@ SQLite를 사용합니다. `DATABASE_PATH` 기본값은 `data/studio.sqlite3`입
 공개 해제나 자료 삭제 시 읽기 API는 `unavailable`을 반환합니다. 삭제는 soft delete입니다.
 
 PDF 입력은 20MB, 그림 업로드는 2MB입니다. 암호 PDF·스캔본·손상 파일·위험한 SVG는 오류로 반환합니다.
+PDF 원본은 저장하지 않습니다. 추출한 텍스트와 파일 이름·크기만 남기며, 판결문의 개인정보가 서버에 파일로 쌓이지 않습니다.
 그림은 PNG/JPEG/WebP와 제한된 SVG를 지원합니다.
 
 ## 검증 및 배포

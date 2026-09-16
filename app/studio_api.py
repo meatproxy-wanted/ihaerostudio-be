@@ -61,23 +61,24 @@ def register_studio(api, config, base_store, provider, owner):
             document_result(state)
         clear_review(state)
 
-    def create(source, settings, maker, original=None):
+    def create(source, settings, maker, pdf_bytes=None):
+        # Only the extracted text is kept. The PDF itself is never read again, and judgments
+        # carry personal details, so its size is recorded and the file is dropped.
         project_id, created_at = uid(), timestamp()
-        projected = studio_provider.source_projection(project_id, source, original is not None)
+        projected = studio_provider.source_projection(project_id, source, pdf_bytes is not None)
         settings = settings.model_dump()
         structure = {**studio_provider.analyze(provider, source, projected, settings), "projectId": project_id, "revision": 0}
         validate_structure(structure, projected)
         project = {"id": project_id, "title": (structure["overview"]["caseName"] or "판결문")[:130] + " 쉬운 설명자료",
             "createdAt": created_at, "updatedAt": created_at, "settings": settings, "settingsRevision": 0,
-            "source": {"kind": "pdf" if original is not None else "text", "fileName": source.filename,
-                       "byteSize": len(original) if original is not None else None,
-                       "charCount": sum(len(p.text) for p in source.pages)},
+            "source": {"kind": "pdf" if pdf_bytes is not None else "text", "fileName": source.filename,
+                       "byteSize": pdf_bytes, "charCount": sum(len(p.text) for p in source.pages)},
             "caseNumber": structure["overview"]["caseNumber"] or None, "structureRevision": 0, "document": None,
             "review": {"checkedContentRevision": None, "openRequiredCount": None, "completedContentRevision": None, "completedAt": None},
             "publication": {"latestVersion": None, "latestContentRevision": None, "publicPublicationId": None, "publicVersion": None}}
         state = {"project": project, "source": projected, "structure": structure, "document": None,
                  "review": None, "completion": None, "dismissals": {}, "publications": [], "assets": []}
-        return store.create(maker, state, original)
+        return store.create(maker, state)
 
     @router.get("/projects")
     def listing(maker: Owner):
@@ -99,7 +100,7 @@ def register_studio(api, config, base_store, provider, owner):
         await file.close()
         filename = (file.filename or "judgment.pdf").replace("\\", "/").split("/")[-1]
         source = await run_in_threadpool(extract_pdf, data, filename)
-        return await run_in_threadpool(create, source, parsed, maker, data)
+        return await run_in_threadpool(create, source, parsed, maker, len(data))
 
     @router.get("/projects/{project_id}")
     def get_project(project_id: str, maker: Owner):

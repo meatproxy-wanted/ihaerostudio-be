@@ -253,9 +253,13 @@ def test_pdf_upload_uses_real_extracted_source(client):
     assert response.status_code == 201, response.text
     project = response.json()
     assert project["source"]["kind"] == "pdf"
+    assert project["source"]["byteSize"] == len(out.getvalue())
     source = client.get(path(project) + "/source").json()
     assert "unique source" in source["paragraphs"][0]["text"]
     assert source["paragraphs"][0]["page"] == 1
+    # Only the text survives: the uploaded file is not kept anywhere.
+    with client.app.state.store.connect() as db:
+        assert db.execute("SELECT original FROM studio_projects WHERE id=?", (project["id"],)).fetchone()[0] is None
 
 
 def test_fe_optional_memo_and_flag_only_save(client):

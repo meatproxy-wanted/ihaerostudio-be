@@ -18,11 +18,12 @@ class StudioStore:
             CREATE INDEX IF NOT EXISTS studio_owner ON studio_projects(owner, deleted, updated_at);
             """)
 
-    def create(self, owner, state, original=None):
+    def create(self, owner, state):
         project = state["project"]
         with self.store.connect() as db:
-            db.execute("INSERT INTO studio_projects VALUES(?,?,?,?,?,?,0)",
-                       (project["id"], owner, 1, project["updatedAt"], json.dumps(state), original))
+            # The `original` column stays for databases created before uploads stopped being kept.
+            db.execute("INSERT INTO studio_projects VALUES(?,?,?,?,?,NULL,0)",
+                       (project["id"], owner, 1, project["updatedAt"], json.dumps(state)))
         return project
 
     def get(self, project_id, owner):
