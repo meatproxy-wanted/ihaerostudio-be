@@ -8,8 +8,17 @@ from .video_workflows import validate_graph
 
 ALLOWED = {"UNETLoader", "DualCLIPLoader", "VAELoader", "CLIPTextEncodeFlux", "ConditioningZeroOut",
            "EmptySD3LatentImage", "KSampler", "VAEDecode", "SaveImage"}
-PRESET = "flux-schnell-illustration-v1"
-REFERENCE_PRESET = "flux2-klein-character-reference-v2"
+PRESET = "flux-schnell-illustration-v2"
+REFERENCE_PRESET = "flux2-klein-character-reference-v3"
+VISIBLE_FACES = (
+    " If people are depicted, show each person's clearly visible face from the front or a three-quarter front view. "
+    "Keep eyes, nose and mouth visible and unobstructed, with the whole head inside the frame. "
+    "Use an eye-level camera placed in front of the people. No rear view, turned-away faces, "
+    "over-the-shoulder camera, faceless silhouettes, or objects covering faces. "
+    "For interactions, angle both people toward the viewer so both faces remain visible. "
+    "Anonymous means a fictional identity, not a hidden or featureless face. "
+    "For scenes without people, do not add a person just to satisfy this framing instruction."
+)
 REFERENCE_ALLOWED = {"UNETLoader", "CLIPLoader", "VAELoader", "CLIPTextEncode", "LoadImage",
                      "ImageScaleToTotalPixels", "VAEEncode", "ReferenceLatent", "ConditioningZeroOut",
                      "CFGGuider", "EmptyFlux2LatentImage", "RandomNoise", "KSamplerSelect",
@@ -20,7 +29,7 @@ def compile_image(illustration, seed, prefix):
     def node(kind, **inputs):
         return WorkflowNode(class_type=kind, inputs=inputs)
     prompt = ("Respectful adult educational illustration, simple flat shapes, calm colors, white background. "
-              "Anonymous adults, no real likeness, no letters, numbers, logos or speech text. " + illustration.prompt)
+              "Anonymous adults, no real likeness, no letters, numbers, logos or speech text. " + illustration.prompt + VISIBLE_FACES)
     graph = {
         "1": node("UNETLoader", unet_name="flux1-schnell.safetensors", weight_dtype="default"),
         "2": node("DualCLIPLoader", clip_name1="clip_l.safetensors", clip_name2="t5xxl_fp16.safetensors", type="flux", device="default"),
@@ -56,7 +65,7 @@ def compile_reference_image(illustration, seed, prefix, references):
               "re-use the exact illustrated adults from the reference images. Preserve each person's apparent age, "
               "face shape, hairstyle, facial hair (including every beard or moustache), skin tone, clothing, "
               "shoes and body proportions. Do not remove facial hair, make an adult younger, change outfits, "
-              "swap faces, or replace anyone with a generic new character. Change only their pose and scene.")
+              "swap faces, or replace anyone with a generic new character. Change only their pose and scene." + VISIBLE_FACES)
     graph = {
         "1": node("UNETLoader", unet_name="flux-2-klein-4b-fp8.safetensors", weight_dtype="default"),
         "2": node("CLIPLoader", clip_name="qwen_3_4b.safetensors", type="flux2", device="default"),
