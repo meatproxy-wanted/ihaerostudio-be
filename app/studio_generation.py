@@ -48,6 +48,8 @@ def image_context(state, card_id):
 def fingerprint(context):
     preset = REFERENCE_PRESET if context.get("characterReferences") else PRESET
     payload = ["character-context-v1", preset, context]
+    if context["role"] != "person":
+        payload.append("detailed-situation-no-text-v1")
     if context["role"] == "decision":
         payload.append("decision-scene-v1")
     return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
@@ -143,6 +145,12 @@ class StudioGeneration:
                     "사람이 나오면 정면 또는 앞쪽 3/4 구도로 눈·코·입이 보이게 하고 뒷모습·얼굴 가림·얼굴 잘림은 피하세요. "
                     "role=person이면 partyId의 인물 한 명을 눈높이에서 본 상반신 초상으로 그리세요. "
                     "머리 전체와 얼굴이 크게 보이게 하고 복잡한 배경보다 얼굴·헤어스타일·의상을 식별하기 쉽게 표현하세요. "
+                    "role이 person이 아니면 인물 소개보다 해당 카드의 상황을 중심으로 장면을 설계하세요. "
+                    "누가 어디서 무엇을 하는지, 인물 간 거리·시선·손동작, 관련 사물의 위치와 상태를 영어로 구체적으로 묘사하세요. "
+                    "상황을 이해하는 데 필요한 디테일만 넣고 원문에 없는 사건·감정·장소·물건을 사실처럼 추가하지 마세요. "
+                    "장소가 불명확하면 특정 장소를 지어내지 말고 중립적인 공간을 사용하세요. "
+                    "글자 없이 행동과 사물 배치로 핵심 상황이 드러나게 하세요. 문서·간판·화면·의류에도 글자·숫자·로고가 없어야 합니다. "
+                    "말풍선·자막·라벨·가짜 글자·워터마크도 금지합니다. "
                     "다른 인물과 관계를 보여줄 때도 두 얼굴이 관객 쪽으로 보이게 배치하세요. 사람이 없는 장면에는 사람을 추가하지 마세요. "
                     "role=decision이면 판결 내용을 확인하는 정적인 장면으로 그리세요. 명령 이행 장면은 금지입니다. "
                     "돈뿐 아니라 봉투·영수증·서류·열쇠도 서로 건네거나 받는 장면을 넣지 마세요. 두 인물의 손은 떨어뜨리고, "
@@ -175,6 +183,16 @@ class StudioGeneration:
                         "facing the viewer directly or in a three-quarter front view at eye level. "
                         "Make the face large and clear, with visible eyes, nose and mouth, the entire head in frame, "
                         "and a simple background. Do not show the person's back or hide the face."})
+                if context["role"] != "person":
+                    plan = plan.model_copy(update={"prompt": plan.prompt +
+                        " Situation-first composition: emphasize the specific event or situation, not a lineup of portraits. "
+                        "Show clearly staged actions, gestures, gaze, spatial relationships and relevant objects with concrete visual detail. "
+                        "Use only details supported by the supplied scene and evidence; use a neutral setting when unspecified. "
+                        "Do not invent events, emotions or completed actions. Preserve allegations versus established facts and court orders."})
+                plan = plan.model_copy(update={"prompt": plan.prompt +
+                    " Absolutely no visible writing: no letters, words, numbers, captions, labels, speech bubbles, logos, "
+                    "watermarks or pseudo-text. Keep documents, signs, screens and clothing unlettered. "
+                    "Communicate the meaning entirely through the visual scene."})
                 if context["role"] == "decision":
                     plan = plan.model_copy(update={"prompt": plan.prompt +
                         " Mandatory court-decision scene constraint: depict people learning or considering the court order, "

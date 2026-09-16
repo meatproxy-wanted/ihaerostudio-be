@@ -442,3 +442,12 @@ def test_multiple_people_reference_is_rejected_before_comfy_submission(setup):
     response = request_image(setup)
     assert response.status_code == 422 and response.json()["detail"]["code"] == "character_reference_unclear"
     assert not submissions(control) and service.provider.calls == 0
+
+
+
+def test_non_portrait_emphasizes_situation_without_visible_writing(setup):
+    assert request_image(setup).status_code == 200
+    prompt = json.loads(submissions(setup[-1])[0].content)["workflow"]["4"]["inputs"]["clip_l"]
+    assert "Situation-first composition" in prompt
+    assert "Absolutely no visible writing" in prompt
+    assert "neutral setting when unspecified" in prompt
