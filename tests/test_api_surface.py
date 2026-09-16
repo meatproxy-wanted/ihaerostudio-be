@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from pypdf import PdfWriter
 
 from app.main import create_app
+from app.sources import MAX_PDF_BYTES
 from test_studio import BASE, SETTINGS, client, create, draft, path
 
 
@@ -69,6 +70,7 @@ def test_frontend_data_survives_server_restart(client):
 @pytest.mark.parametrize("kind,code,status", [
     ("invalid", "invalid_pdf", 422), ("blank", "ocr_required", 422),
     ("encrypted", "encrypted_pdf", 422), ("oversize", "file_too_large", 413),
+    ("huge", "request_too_large", 413),
 ])
 def test_pdf_rejections_leave_no_project(client, kind, code, status):
     writer, output = PdfWriter(), io.BytesIO()
@@ -80,7 +82,9 @@ def test_pdf_rejections_leave_no_project(client, kind, code, status):
     if kind == "invalid":
         data = b"not a PDF"
     elif kind == "oversize":
-        data = b"%PDF-" + b"x" * (20 * 1024 * 1024)
+        data = b"%PDF-" + b"x" * MAX_PDF_BYTES  # over the file limit, under the request body cap
+    elif kind == "huge":
+        data = b"%PDF-" + b"x" * (6 * 1024 * 1024)  # the body cap rejects it before parsing
     response = client.post(BASE + "/projects/pdf", data={"settings": json.dumps(SETTINGS)},
                            files={"file": ("test.pdf", data, "application/pdf")})
     assert response.status_code == status

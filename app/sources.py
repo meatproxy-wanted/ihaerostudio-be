@@ -8,7 +8,8 @@ from pypdf import PdfReader
 from .models import Page, Paragraph, Source
 from .store import fail
 
-MAX_PDF_BYTES = 20 * 1024 * 1024
+# Sized for hosts that cap request bodies at 4.5 MB (Vercel), with room for the multipart envelope.
+MAX_PDF_BYTES = 4_500_000
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_TEXT = 150000
 
@@ -43,7 +44,7 @@ def source_from_pages(texts: list[str], filename: str | None = None) -> Source:
 
 def extract_pdf(data: bytes, filename: str) -> Source:
     if len(data) > MAX_PDF_BYTES:
-        fail(413, "file_too_large", "PDF는 최대 20MB입니다.")
+        fail(413, "file_too_large", "PDF는 최대 4.5MB입니다.")
     if not data.startswith(b"%PDF-"):
         fail(422, "invalid_pdf", "올바른 PDF 파일이 아닙니다.")
     try:

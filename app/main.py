@@ -23,7 +23,7 @@ ANONYMOUS_TOKEN = re.compile(r"[A-Za-z0-9._~-]{16,200}")
 
 class UploadLimitMiddleware:
     """Bound streamed request bodies too, before multipart parsers allocate files."""
-    def __init__(self, app, limit=22 * 1024 * 1024):
+    def __init__(self, app, limit=5 * 1024 * 1024):
         self.app, self.limit = app, limit
 
     async def __call__(self, scope, receive, send):
@@ -36,7 +36,7 @@ class UploadLimitMiddleware:
                 return
             size += len(message.get("body", b""))
             if size > self.limit:
-                response = Response(json.dumps({"detail": {"code": "request_too_large", "message": "요청은 최대 22MB입니다."}}), status_code=413, media_type="application/json")
+                response = Response(json.dumps({"detail": {"code": "request_too_large", "message": "요청은 최대 5MB입니다."}}), status_code=413, media_type="application/json")
                 return await response(scope, receive, send)
             chunks.append(message)
             if not message.get("more_body", False):
