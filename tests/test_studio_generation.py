@@ -18,6 +18,8 @@ class PromptProvider:
     calls = 0
 
     def call(self, task, context, schema, *, images=()):
+        if schema.__name__ == "FaceVisibility":
+            return schema(visibleFaces=[getattr(self, "face_visible", True)], alt="얼굴이 보이는 인물")
         if schema.__name__ == "CharacterAppearance":
             self.profile_calls = getattr(self, "profile_calls", 0) + 1
             assert len(images) == 1 and images[0].startswith(b"\x89PNG")
@@ -466,3 +468,15 @@ def test_hidden_face_reference_is_rejected_before_comfy_submission(setup):
     response = request_image(setup)
     assert response.status_code == 422 and response.json()["detail"]["code"] == "character_reference_unclear"
     assert not submissions(control) and service.provider.calls == 0
+
+
+
+def test_no_reference_rear_view_is_rejected_and_corrected_once(setup):
+    _, service, _, _, _, control = setup
+    service.provider.face_visible = False
+    assert request_image(setup).json()["detail"]["code"] == "image_identity_mismatch"
+    service.provider.face_visible = True
+    assert request_image(setup).status_code == 200
+    prompt = json.loads(submissions(control)[1].content)["workflow"]["4"]["inputs"]["clip_l"]
+    assert "Camera directly in front" in prompt
+    assert len(submissions(control)) == 2
