@@ -129,8 +129,21 @@ class CharacterIdentity:
 
 
 def identity_instructions(profiles):
-    # Concrete observed features must survive scene planning; do not rely on the model
-    # to copy them into its scene description, or to guess what 'same person' means.
-    return "\nFixed character appearances observed in the supplied reference images. Preserve these exactly:\n" + json.dumps(
-        [{k: v for k, v in profile.items() if k not in {"partyId", "personCount", "faceVisible"}} for profile in profiles],
-        ensure_ascii=False)
+    """Repeat fixed English appearance descriptions verbatim in every scene."""
+    lines = [
+        "\nCHARACTER APPEARANCE LOCK. These are fixed fictional character designs, not scene suggestions.",
+        "Keep the same faces, facial hair, hairstyles, clothing layers, colors and shoes in every scene.",
+        "Only pose, expression and setting may change. Do not redesign characters to match their legal roles.",
+    ]
+    for profile in profiles:
+        facial_hair = ("Clean-shaven. No beard, moustache or stubble."
+                       if profile["facialHair"] == "none" else profile["facialHairDescription"])
+        lines.append(
+            f'Reference image {profile["imageNumber"]}: '
+            f'Face: {profile["face"]}. Hair: {profile["hair"]}. '
+            f'Facial hair: {facial_hair}. '
+            f'Upper clothing: {profile["upperClothing"]}. '
+            f'Lower clothing: {profile["lowerClothing"]}. Shoes: {profile["shoes"]}. '
+            f'Accessories: {profile["accessories"]}. Illustration style: {profile["style"]}.'
+        )
+    return "\n".join(lines)

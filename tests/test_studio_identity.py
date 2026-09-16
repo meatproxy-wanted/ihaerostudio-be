@@ -45,3 +45,16 @@ def test_allows_matching_scene_and_no_unrequired_people():
     assert inspect([PERSON]).consistent
     assert inspect([]).consistent
     assert inspect([PERSON]).correction == ""
+
+
+
+def test_prompt_repeats_fixed_english_features_and_explicit_absence_of_beard():
+    from app.studio_identity import identity_instructions
+    profile = {**PROFILE, "face": "oval face", "facialHairDescription": "none",
+               "accessories": "no accessories", "style": "flat vector"}
+    text = identity_instructions([profile])
+    assert "Reference image 1:" in text
+    assert "Clean-shaven. No beard, moustache or stubble." in text
+    assert "gray shirt" in text and "black sneakers" in text
+    assert "Only pose, expression and setting may change" in text
+    assert "partyId" not in text

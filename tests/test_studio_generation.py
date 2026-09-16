@@ -414,7 +414,7 @@ def test_inconsistent_candidate_is_hidden_and_one_correction_is_allowed(setup):
     assert corrected.headers["Idempotency-Key"] == first.headers["Idempotency-Key"] + "-identity-1"
     graph = json.loads(corrected.content)["workflow"]
     text = graph["4"]["inputs"]["text"]
-    assert "clean-shaven" in text and "gray shirt" in text and "Restore each character" in text
+    assert "clean-shaven" in text.lower() and "gray shirt" in text and "Restore each character" in text
     assert request_image(setup).json() == result.json()
     assert len(submissions(control)) == 2
 
