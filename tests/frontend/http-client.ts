@@ -52,6 +52,7 @@ export function createHttpApi(): ApiClient {
       latest: (id) => request(`${p(id)}/review`),
       run: (id, options) => request(`${p(id)}/review/run`, "POST", undefined, options?.signal),
       dismiss: (id, input) => request(`${p(id)}/review/dismiss`, "POST", input),
+      dismissAll: (id, input) => request(`${p(id)}/review/dismiss-all`, "POST", input),
       restore: (id, input) => request(`${p(id)}/review/restore`, "POST", input),
       complete: (id, input) => request(`${p(id)}/review/complete`, "POST", input),
     },

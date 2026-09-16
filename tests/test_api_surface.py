@@ -31,7 +31,7 @@ def test_only_frontend_routes_are_served(client):
     }
     for action in ["simplify", "split", "terms", "explain", "images", "upload-image"]:
         expected[f"/projects/{{project_id}}/assist/{action}"] = {"post"}
-    for action in ["run", "dismiss", "restore", "complete"]:
+    for action in ["run", "dismiss", "dismiss-all", "restore", "complete"]:
         expected[f"/projects/{{project_id}}/review/{action}"] = {"post"}
     expected = {BASE + key: value for key, value in expected.items()}
     schema = client.get("/openapi.json").json()

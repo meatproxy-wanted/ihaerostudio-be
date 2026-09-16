@@ -12,7 +12,7 @@ from . import studio_provider
 from .models import uid
 from .sources import MAX_PDF_BYTES, extract_pdf, source_from_pages
 from .store import fail
-from .studio_domain import (invalidate_review, reader_content, require_document, review_items,
+from .studio_domain import (apply_naming, invalidate_review, reader_content, require_document, review_items,
                             sentences, structure_content, summarize_document, sync_review, timestamp, validate_document, validate_structure)
 from .studio_store import StudioStore, asset_size, asset_url
 from .studio_images import MAX_UPLOAD, cleaned_upload
@@ -121,10 +121,7 @@ def register_studio(api, config, base_store, provider, owner):
         new = body.model_dump()
         if current["settings"] != new:
             if current["settings"]["naming"] != new["naming"]:
-                for index, party in enumerate(state["structure"]["parties"]):
-                    party["displayName"] = (party["legalStatus"] if new["naming"] == "legal" else
-                        (party["easyRole"] or party["legalStatus"]) if new["naming"] == "role" else
-                        f"{chr(65 + index)}씨" if index < 26 else f"인물 {index + 1}")
+                apply_naming(state["structure"], new["naming"])
                 state["structure"]["revision"] += 1
                 current["structureRevision"] = state["structure"]["revision"]
             current["settings"] = new
@@ -290,18 +287,19 @@ def register_studio(api, config, base_store, provider, owner):
         store.save(state, maker, version)
         return {"run": state["review"], "project": state["project"]}
 
-    def dismissal(project_id, maker, key, value):
+    def dismissal(project_id, maker, keys, value):
         state, version = state_for(project_id, maker)
         if not state["review"]:
             fail(409, "review_required", "다시 점검해 주세요.")
-        item = next((i for i in state["review"]["items"] if i["key"] == key), None)
-        if item is None:
+        items = {i["key"]: i for i in state["review"]["items"]}
+        if any(key not in items for key in keys):
             fail(404, "not_found", "검토 항목이 없어요.")
-        item["dismissal"] = value
-        if value:
-            state["dismissals"][key] = value
-        else:
-            state["dismissals"].pop(key, None)
+        for key in keys:
+            items[key]["dismissal"] = value
+            if value:
+                state["dismissals"][key] = value
+            else:
+                state["dismissals"].pop(key, None)
         invalidate_review(state)
         sync_review(state)
         store.save(state, maker, version)
@@ -309,11 +307,16 @@ def register_studio(api, config, base_store, provider, owner):
 
     @router.post("/projects/{project_id}/review/dismiss")
     def dismiss(project_id: str, body: wire.Dismiss, maker: Owner):
-        return dismissal(project_id, maker, body.key, {"memo": body.memo.strip(), "at": timestamp()})
+        return dismissal(project_id, maker, [body.key], {"memo": body.memo.strip(), "at": timestamp()})
+
+    @router.post("/projects/{project_id}/review/dismiss-all")
+    def dismiss_all(project_id: str, body: wire.DismissAll, maker: Owner):
+        # One save for the whole batch; per-item calls would race on the project version.
+        return dismissal(project_id, maker, list(dict.fromkeys(body.keys)), {"memo": body.memo.strip(), "at": timestamp()})
 
     @router.post("/projects/{project_id}/review/restore")
     def restore(project_id: str, body: wire.Restore, maker: Owner):
-        return dismissal(project_id, maker, body.key, None)
+        return dismissal(project_id, maker, [body.key], None)
 
     @router.post("/projects/{project_id}/review/complete")
     def complete(project_id: str, body: wire.Complete, maker: Owner):

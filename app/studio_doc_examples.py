@@ -46,13 +46,13 @@ PROJECT = {
 DRAFT_PROJECT = deepcopy(PROJECT)
 DRAFT_PROJECT["document"] = summarize_document(DOCUMENT)
 REVIEW = {"projectId": PROJECT["id"], "contentRevision": 0, "ranAt": AT, "items": [
-    {"key": "numbers:example", "category": "numbers", "level": "required", "title": "숫자를 원문과 비교해 주세요",
+    {"key": "numbers:example", "category": "numbers", "level": "suggested", "title": "숫자를 원문과 비교해 주세요",
      "detail": "표기가 바뀐 금액·날짜·기간일 수 있어요. 값과 단위를 확인해 주세요.",
      "target": {"type": "sentence", "cardId": "card-1", "sentenceId": "sentence-1"},
      "evidence": {"text": DOCUMENT["sections"][1]["cards"][0]["sentences"][0]["text"], "anchors": [ANCHOR], "structureValue": None, "imageId": None},
      "suggestion": None, "dismissal": None}]}
 REVIEW_PROJECT = deepcopy(DRAFT_PROJECT)
-REVIEW_PROJECT["review"].update(checkedContentRevision=0, openRequiredCount=1)
+REVIEW_PROJECT["review"].update(checkedContentRevision=0, openRequiredCount=0)
 COMPLETION = {"contentRevision": 0, "completedAt": AT, "checklist": ["numbers", "relations", "images", "claims"]}
 COMPLETE_PROJECT = deepcopy(REVIEW_PROJECT)
 COMPLETE_PROJECT["review"].update(openRequiredCount=0, completedContentRevision=0, completedAt=AT)

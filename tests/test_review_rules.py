@@ -28,7 +28,7 @@ def test_only_the_three_rules_fire():
         sentence("이 문장은 일부러 마흔다섯 글자보다 길게 써서 살펴보기 항목이 생기는지 확인하는 문장이에요."),  # long
     ]))
     assert [(i["category"], i["level"]) for i in items] == [
-        ("no-anchor", "required"), ("numbers", "required"), ("long-sentence", "suggested")]
+        ("no-anchor", "required"), ("numbers", "suggested"), ("long-sentence", "suggested")]
     assert all(i["target"]["type"] == "sentence" for i in items)
 
 

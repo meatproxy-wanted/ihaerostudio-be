@@ -233,6 +233,11 @@ class Restore(Wire):
     key: Annotated[str, Field(min_length=1, max_length=300)]
 
 
+class DismissAll(Wire):
+    keys: list[Annotated[str, Field(min_length=1, max_length=300)]] = Field(min_length=1, max_length=500)
+    memo: Annotated[str, Field(max_length=2000)]
+
+
 class Complete(Wire):
     checklist: list[Literal["numbers", "relations", "images", "claims"]] = Field(max_length=4)
 

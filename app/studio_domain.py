@@ -16,6 +16,21 @@ def utf16_length(text):
     return len(text.encode("utf-16-le")) // 2
 
 
+def display_name(party, naming, index):
+    """The party name the maker's naming setting asks for; the model's own choice is not trusted."""
+    if naming == "legal":
+        return party["legalStatus"]
+    if naming == "role":
+        return party["easyRole"] or party["legalStatus"]
+    return f"{chr(65 + index)}씨" if index < 26 else f"인물 {index + 1}"
+
+
+def apply_naming(structure, naming):
+    for index, party in enumerate(structure["parties"]):
+        party["displayName"] = display_name(party, naming, index)
+    return structure
+
+
 def anchor_text(source, anchor):
     paragraph = next((p for p in source["paragraphs"] if p["id"] == anchor["paragraphId"]), None)
     if paragraph is None:
@@ -247,6 +262,8 @@ LONG_SENTENCE = 45
 def review_items(state):
     """Rule checks a producer asked for: missing evidence, numbers the source does not have, long sentences.
 
+    Only missing evidence blocks completion; numbers and length are pointers for the maker to weigh.
+
     Deliberately narrow. Everything else (who said what, claims vs findings, picture meaning)
     is the producer's own comparison, guided by the final checklist rather than by items.
     """
@@ -272,7 +289,7 @@ def review_items(state):
             if not anchors:
                 add("no-anchor", "원문 근거가 없는 문장이에요", "근거를 연결하거나 원문과 직접 비교해 주세요.", target, text, anchors)
             if set(re.findall(r"\d[\d,]*(?:\.\d+)?", text.replace(",", ""))) - known_numbers:
-                add("numbers", "숫자를 원문과 비교해 주세요", "표기가 바뀐 금액·날짜·기간일 수 있어요. 값과 단위를 확인해 주세요.", target, text, anchors)
+                add("numbers", "숫자를 원문과 비교해 주세요", "표기가 바뀐 금액·날짜·기간일 수 있어요. 값과 단위를 확인해 주세요.", target, text, anchors, level="suggested")
             if len(text) > LONG_SENTENCE:
                 add("long-sentence", "문장이 길어요", "한 문장에 한 가지 내용을 담아 주세요.", target, text, anchors, level="suggested")
     return items

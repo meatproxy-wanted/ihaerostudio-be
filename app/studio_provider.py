@@ -1,7 +1,7 @@
 """Use the existing provider transport with the FE's richer structure/draft schema."""
 from . import studio_models as wire
 from .models import Document, Settings, uid
-from .studio_domain import resolve_draft_quotes, resolve_structure_quotes, utf16_length
+from .studio_domain import apply_naming, resolve_draft_quotes, resolve_structure_quotes, utf16_length
 
 STUDIO_INSTRUCTIONS = """
 이번 작업의 settings는 FE 형식입니다. tone=haeyo는 해요체, hamnida는 합니다체입니다.
@@ -36,13 +36,17 @@ def source_projection(project_id, source, is_pdf):
 
 
 def analyze(provider, source, projected, settings):
+    # The naming setting is applied here rather than left to the model, which tends to answer A씨·B씨 regardless.
+    return apply_naming(extract_structure(provider, source, projected, settings), settings["naming"])
+
+
+def extract_structure(provider, source, projected, settings):
     if provider.name != "demo":
         quoted = provider.call(STUDIO_INSTRUCTIONS + "원문에서 사건 개요, 당사자, 핵심 사실, 주장, 판단, 결정을 추출하세요.",
                                {"source": projected, "settings": settings}, wire.AiStructureContent).model_dump()
         return wire.StructureContent.model_validate(resolve_structure_quotes(quoted, projected)).model_dump()
     legacy = provider.analyze(Document(title="데모 원문 대조 자료", source=source, settings=Settings()))
-    parties = [{"id": p.id, "sourceLabel": p.role, "legalStatus": p.role,
-                "displayName": p.role if settings["naming"] == "legal" else p.label,
+    parties = [{"id": p.id, "sourceLabel": p.role, "legalStatus": p.role, "displayName": p.label,
                 "easyRole": p.relationship, "anchors": [], "flags": []} for p in legacy.parties]
     result = {"overview": {"caseName": legacy.case_name, "caseNumber": "", "court": "", "decisionDate": ""},
               "parties": parties, "keyFacts": [], "claims": [], "findings": [], "decisions": []}

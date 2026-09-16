@@ -169,6 +169,33 @@ def test_settings_invalidate_and_forged_revisions_are_ignored(client):
     assert saved["basedOnSettingsRevision"] == 0
 
 
+def test_naming_setting_decides_party_names_from_the_start(client):
+    def parties(settings):
+        return client.get(path(create(client, settings)) + "/structure").json()["parties"]
+    by_role = parties({**SETTINGS, "naming": "role"})
+    assert [p["displayName"] for p in by_role] == [p["easyRole"] or p["legalStatus"] for p in by_role]
+    assert "A씨" not in {p["displayName"] for p in by_role}
+    assert [p["displayName"] for p in parties({**SETTINGS, "naming": "legal"})] == ["원고", "피고"]
+    assert [p["displayName"] for p in parties(SETTINGS)] == ["A씨", "B씨"]
+
+
+def test_dismiss_all_records_every_key_in_one_save(client):
+    project = create(client)
+    draft(client, project)
+    run = client.post(path(project) + "/review/run").json()["run"]
+    keys = [item["key"] for item in run["items"]]
+    assert len(keys) >= 2
+    missing = client.post(path(project) + "/review/dismiss-all", json={"keys": keys + ["nope"], "memo": ""})
+    assert missing.status_code == 404
+    assert all(i["dismissal"] is None for i in client.get(path(project) + "/review").json()["items"])
+    response = client.post(path(project) + "/review/dismiss-all", json={"keys": keys + keys[:1], "memo": " 전부 대조했어요 "})
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert all(i["dismissal"]["memo"] == "전부 대조했어요" for i in result["run"]["items"])
+    assert result["project"]["review"]["openRequiredCount"] == 0
+    assert client.post(path(project) + "/review/dismiss-all", json={"keys": [], "memo": ""}).status_code == 422
+
+
 def test_png_upload_and_external_asset_rejection(client):
     project = create(client, {**SETTINGS, "illustrations": "with"})
     doc = draft(client, project)

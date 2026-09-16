@@ -5041,7 +5041,7 @@
                         {
                           "key": "numbers:example",
                           "category": "numbers",
-                          "level": "required",
+                          "level": "suggested",
                           "title": "숫자를 원문과 비교해 주세요",
                           "detail": "표기가 바뀐 금액·날짜·기간일 수 있어요. 값과 단위를 확인해 주세요.",
                           "target": {
@@ -5190,7 +5190,7 @@
                           {
                             "key": "numbers:example",
                             "category": "numbers",
-                            "level": "required",
+                            "level": "suggested",
                             "title": "숫자를 원문과 비교해 주세요",
                             "detail": "표기가 바뀐 금액·날짜·기간일 수 있어요. 값과 단위를 확인해 주세요.",
                             "target": {
@@ -5244,7 +5244,7 @@
                         },
                         "review": {
                           "checkedContentRevision": 0,
-                          "openRequiredCount": 1,
+                          "openRequiredCount": 0,
                           "completedContentRevision": null,
                           "completedAt": null
                         },
@@ -5262,7 +5262,7 @@
             }
           }
         },
-        "description": "### 프론트 호출 시점\n\n저장된 편집 문서를 검토하거나 편집 후 다시 점검할 때 호출합니다.\n\n### 요청 방법\n\nproject_id만 전달합니다. 요청 본문은 없으며 초안 문서가 먼저 존재해야 합니다. 편집 중 내용은 PUT document 저장을 마친 뒤 점검합니다.\n\n### 응답 해석\n\n{run, project}를 반환합니다. run.items에는 원문 근거가 없는 문장(no-anchor, required), 원문에 없는 숫자가 든 문장(numbers, required), 45자를 넘는 문장(long-sentence, suggested)만 들어갑니다. required는 검토 완료를 막고 suggested는 권고 항목입니다.\n\n### 저장·버전·외부 호출 영향\n\nOpenAI나 Comfy를 호출하지 않는 규칙 점검입니다. 누가 말했는지, 주장과 판단의 구분, 그림의 뜻은 판정하지 않으며 최종 체크리스트에서 제작자가 직접 확인합니다. 점검 결과를 저장하고 기존 최종 검토 완료를 해제합니다. 같은 문장·근거의 확인 기록은 key가 같아 다시 점검해도 유지됩니다.\n\n### 다음 동작\n\n각 항목의 target 위치를 보여 주고 원문·그림을 대조하세요. 문제가 없다고 판단한 항목은 review/dismiss, 수정이 필요하면 문서 저장 후 재점검합니다.\n\n**인증:** 제작자 Bearer 토큰이 필요합니다. 다른 제작자의 자료에는 접근할 수 없습니다."
+        "description": "### 프론트 호출 시점\n\n저장된 편집 문서를 검토하거나 편집 후 다시 점검할 때 호출합니다.\n\n### 요청 방법\n\nproject_id만 전달합니다. 요청 본문은 없으며 초안 문서가 먼저 존재해야 합니다. 편집 중 내용은 PUT document 저장을 마친 뒤 점검합니다.\n\n### 응답 해석\n\n{run, project}를 반환합니다. run.items에는 원문 근거가 없는 문장(no-anchor, required), 원문에 없는 숫자가 든 문장(numbers, suggested), 45자를 넘는 문장(long-sentence, suggested)만 들어갑니다. required는 검토 완료를 막고 suggested는 권고 항목입니다.\n\n### 저장·버전·외부 호출 영향\n\nOpenAI나 Comfy를 호출하지 않는 규칙 점검입니다. 누가 말했는지, 주장과 판단의 구분, 그림의 뜻은 판정하지 않으며 최종 체크리스트에서 제작자가 직접 확인합니다. 점검 결과를 저장하고 기존 최종 검토 완료를 해제합니다. 같은 문장·근거의 확인 기록은 key가 같아 다시 점검해도 유지됩니다.\n\n### 다음 동작\n\n각 항목의 target 위치를 보여 주고 원문·그림을 대조하세요. 문제가 없다고 판단한 항목은 review/dismiss, 수정이 필요하면 문서 저장 후 재점검합니다.\n\n**인증:** 제작자 Bearer 토큰이 필요합니다. 다른 제작자의 자료에는 접근할 수 없습니다."
       }
     },
     "/api/studio/projects/{project_id}/review/dismiss": {
@@ -5455,7 +5455,7 @@
                           {
                             "key": "numbers:example",
                             "category": "numbers",
-                            "level": "required",
+                            "level": "suggested",
                             "title": "숫자를 원문과 비교해 주세요",
                             "detail": "표기가 바뀐 금액·날짜·기간일 수 있어요. 값과 단위를 확인해 주세요.",
                             "target": {
@@ -5531,6 +5531,276 @@
           }
         },
         "description": "### 프론트 호출 시점\n\n제작자가 해당 점검 항목을 원문·그림과 비교하여 문제없다고 확인했을 때 호출합니다.\n\n### 요청 방법\n\n최근 점검 items[].key와 memo를 보냅니다. memo 필드는 필수지만 빈 문자열도 허용하며 최대 2,000자입니다. 예제 key를 그대로 쓰지 말고 실제 점검 응답의 값을 사용하세요.\n\n### 응답 해석\n\n{run, project}를 반환합니다. 해당 항목 dismissal에 메모·시각이 기록되고 미처리 required 수가 갱신됩니다.\n\n### 저장·버전·외부 호출 영향\n\n점검 경고를 자동 수정하거나 문장 verified를 바꾸지 않습니다. 제작자의 확인 기록만 저장하고 기존 최종 검토 완료는 해제합니다. 최근 점검이 없으면 review_required, key가 없으면 not_found입니다.\n\n### 다음 동작\n\n남은 required 항목을 처리한 뒤 review/complete로 최종 체크리스트를 제출합니다. 문장 원문 대조 표시를 바꾸려면 문서를 별도로 저장해야 합니다.\n\n**인증:** 제작자 Bearer 토큰이 필요합니다. 다른 제작자의 자료에는 접근할 수 없습니다."
+      }
+    },
+    "/api/studio/projects/{project_id}/review/dismiss-all": {
+      "post": {
+        "tags": [
+          "FE 연동"
+        ],
+        "summary": "점검 항목 일괄 확인 — 여러 항목을 한 번에 문제없음으로 기록",
+        "operationId": "dismiss_all_api_studio_projects__project_id__review_dismiss_all_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            },
+            "description": "자료 생성 응답의 id 또는 작업함 목록의 id. 예시 ID를 실제 값으로 교체하세요.",
+            "example": "project-example"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissAll"
+              },
+              "examples": {
+                "request": {
+                  "summary": "요청 예시 — ID·버전은 실제 조회 값으로 바꾸세요",
+                  "value": {
+                    "keys": [
+                      "numbers:example"
+                    ],
+                    "memo": "가상 예제 원문과 직접 비교했습니다."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "401": {
+            "description": "발생 조건과 처리 방법:\n\n- **unauthorized**: 유효한 Bearer 토큰이 필요합니다. 토큰이 없거나 형식이 맞지 않습니다(익명 모드: 영문·숫자·._~- 16자 이상). keys 모드에서는 API_KEYS에 등록한 토큰이어야 합니다.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "unauthorized": {
+                    "summary": "unauthorized",
+                    "description": "토큰이 없거나 형식이 맞지 않습니다(익명 모드: 영문·숫자·._~- 16자 이상). keys 모드에서는 API_KEYS에 등록한 토큰이어야 합니다.",
+                    "value": {
+                      "detail": {
+                        "code": "unauthorized",
+                        "message": "유효한 Bearer 토큰이 필요합니다."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "발생 조건과 처리 방법:\n\n- **not_found**: 자료 또는 요청한 항목을 찾을 수 없어요. ID·소유권·삭제 여부를 확인합니다. 문서 API는 초안 생성 전에도 404입니다.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "not_found": {
+                    "summary": "not_found",
+                    "description": "ID·소유권·삭제 여부를 확인합니다. 문서 API는 초안 생성 전에도 404입니다.",
+                    "value": {
+                      "detail": {
+                        "code": "not_found",
+                        "message": "자료 또는 요청한 항목을 찾을 수 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "발생 조건과 처리 방법:\n\n- **review_required**: 현재 내용을 검토해 주세요. 현재 문서를 점검하고 필요한 확인을 마칩니다. 공개할 때는 reviewed=true인 게시본을 선택합니다.\n\n- **version_conflict**: 다른 편집이 저장됐어요. 새로고침 후 다시 시도해 주세요. 최신 자료를 GET하고 변경 내용을 합친 뒤 최신 버전으로 다시 저장합니다.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "review_required": {
+                    "summary": "review_required",
+                    "description": "현재 문서를 점검하고 필요한 확인을 마칩니다. 공개할 때는 reviewed=true인 게시본을 선택합니다.",
+                    "value": {
+                      "detail": {
+                        "code": "review_required",
+                        "message": "현재 내용을 검토해 주세요."
+                      }
+                    }
+                  },
+                  "version_conflict": {
+                    "summary": "version_conflict",
+                    "description": "최신 자료를 GET하고 변경 내용을 합친 뒤 최신 버전으로 다시 저장합니다.",
+                    "value": {
+                      "detail": {
+                        "code": "version_conflict",
+                        "message": "다른 편집이 저장됐어요. 새로고침 후 다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "발생 조건과 처리 방법:\n\n- **request_too_large**: 요청은 최대 5MB입니다. HTTP 요청 본문 전체를 줄입니다. 파일 자체 한도는 이보다 작을 수 있습니다.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "request_too_large": {
+                    "summary": "request_too_large",
+                    "description": "HTTP 요청 본문 전체를 줄입니다. 파일 자체 한도는 이보다 작을 수 있습니다.",
+                    "value": {
+                      "detail": {
+                        "code": "request_too_large",
+                        "message": "요청은 최대 5MB입니다."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "입력 필드의 형식·필수 여부·길이·열거값 검증 오류입니다.\n\n요청 형식 검증 실패 시 detail은 객체 대신 오류 위치(loc)·메시지(msg)·유형(type)을 담은 배열입니다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                },
+                "examples": {
+                  "request_validation": {
+                    "summary": "필수 필드 누락 예시",
+                    "value": {
+                      "detail": [
+                        {
+                          "type": "missing",
+                          "loc": [
+                            "body",
+                            "필수필드"
+                          ],
+                          "msg": "Field required",
+                          "input": {}
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "처리 완료. 응답의 의미와 다음 동작은 위 설명을 참고하세요.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioReviewResult"
+                },
+                "examples": {
+                  "success": {
+                    "summary": "가상 자료의 성공 응답 예시",
+                    "value": {
+                      "run": {
+                        "projectId": "project-example",
+                        "contentRevision": 0,
+                        "ranAt": "2026-09-14T09:00:00Z",
+                        "items": [
+                          {
+                            "key": "numbers:example",
+                            "category": "numbers",
+                            "level": "suggested",
+                            "title": "숫자를 원문과 비교해 주세요",
+                            "detail": "표기가 바뀐 금액·날짜·기간일 수 있어요. 값과 단위를 확인해 주세요.",
+                            "target": {
+                              "type": "sentence",
+                              "cardId": "card-1",
+                              "sentenceId": "sentence-1"
+                            },
+                            "evidence": {
+                              "text": "법원은 B씨에게 A씨의 보증금 1,000만 원을 돌려주라고 결정했어요.",
+                              "anchors": [
+                                {
+                                  "paragraphId": "p1",
+                                  "start": 125,
+                                  "end": 165
+                                }
+                              ],
+                              "structureValue": null,
+                              "imageId": null
+                            },
+                            "suggestion": null,
+                            "dismissal": {
+                              "memo": "가상 예제 원문과 직접 비교했습니다.",
+                              "at": "2026-09-14T09:00:00Z"
+                            }
+                          }
+                        ]
+                      },
+                      "project": {
+                        "id": "project-example",
+                        "title": "가상 임대차보증금 반환 사건 쉬운 설명자료",
+                        "createdAt": "2026-09-14T09:00:00Z",
+                        "updatedAt": "2026-09-14T09:00:00Z",
+                        "settings": {
+                          "tone": "haeyo",
+                          "naming": "initial",
+                          "illustrations": "with"
+                        },
+                        "settingsRevision": 0,
+                        "source": {
+                          "kind": "text",
+                          "fileName": null,
+                          "byteSize": null,
+                          "charCount": 165
+                        },
+                        "caseNumber": null,
+                        "structureRevision": 0,
+                        "document": {
+                          "saveRevision": 0,
+                          "contentRevision": 0,
+                          "basedOnStructureRevision": 0,
+                          "basedOnSettingsRevision": 0,
+                          "sentenceCount": 1,
+                          "verifiedCount": 0
+                        },
+                        "review": {
+                          "checkedContentRevision": 0,
+                          "openRequiredCount": 0,
+                          "completedContentRevision": null,
+                          "completedAt": null
+                        },
+                        "publication": {
+                          "latestVersion": null,
+                          "latestContentRevision": null,
+                          "publicPublicationId": null,
+                          "publicVersion": null
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "### 프론트 호출 시점\n\n제작자가 남은 점검 항목 여러 개를 한 번에 문제없다고 확인할 때 호출합니다. 화면에 보이는 항목 전체에 씁니다.\n\n### 요청 방법\n\n최근 점검 items[].key 배열과 공통 memo를 보냅니다. keys는 1개 이상 500개 이하이고 중복은 무시합니다. memo는 빈 문자열도 허용하며 최대 2,000자입니다.\n\n### 응답 해석\n\n{run, project}를 반환합니다. 보낸 모든 항목의 dismissal에 같은 메모·시각이 기록되고 미처리 required 수가 갱신됩니다.\n\n### 저장·버전·외부 호출 영향\n\n하나의 저장으로 처리하므로 항목별 dismiss를 연달아 호출할 때 생기는 version_conflict가 없습니다. 기존 최종 검토 완료는 해제합니다. 최근 점검이 없으면 review_required, 하나라도 없는 key가 있으면 not_found이고 아무것도 저장하지 않습니다.\n\n### 다음 동작\n\n남은 required 항목이 없어지면 review/complete로 최종 체크리스트를 제출합니다. 잘못 확인한 항목은 review/restore로 하나씩 되돌립니다.\n\n**인증:** 제작자 Bearer 토큰이 필요합니다. 다른 제작자의 자료에는 접근할 수 없습니다."
       }
     },
     "/api/studio/projects/{project_id}/review/restore": {
@@ -5722,7 +5992,7 @@
                           {
                             "key": "numbers:example",
                             "category": "numbers",
-                            "level": "required",
+                            "level": "suggested",
                             "title": "숫자를 원문과 비교해 주세요",
                             "detail": "표기가 바뀐 금액·날짜·기간일 수 있어요. 값과 단위를 확인해 주세요.",
                             "target": {
@@ -5776,7 +6046,7 @@
                         },
                         "review": {
                           "checkedContentRevision": 0,
-                          "openRequiredCount": 1,
+                          "openRequiredCount": 0,
                           "completedContentRevision": null,
                           "completedAt": null
                         },
@@ -7383,6 +7653,33 @@
           "memo"
         ],
         "title": "Dismiss"
+      },
+      "DismissAll": {
+        "properties": {
+          "keys": {
+            "items": {
+              "type": "string",
+              "maxLength": 300,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Keys"
+          },
+          "memo": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Memo"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "keys",
+          "memo"
+        ],
+        "title": "DismissAll"
       },
       "DocImage": {
         "properties": {

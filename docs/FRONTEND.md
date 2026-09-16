@@ -18,7 +18,7 @@
 | 초안·자동 저장 | `POST /projects/{id}/document/generate`, `GET/PUT /projects/{id}/document` |
 | 문장·용어 보조 | `POST /projects/{id}/assist/{simplify,split,terms,explain}` |
 | 그림 후보·업로드 | `POST /projects/{id}/assist/{images,upload-image}` |
-| 검토 | `GET /projects/{id}/review`, `POST /projects/{id}/review/{run,dismiss,restore,complete}` |
+| 검토 | `GET /projects/{id}/review`, `POST /projects/{id}/review/{run,dismiss,dismiss-all,restore,complete}` |
 | 게시본 | `GET/POST /projects/{id}/publications`, `GET /projects/{id}/publications/{publicationId}` |
 | 공개·해제 | `PUT /projects/{id}/public` (`publicationId` 또는 null) |
 | 독자 | `GET /reader/{id}` (인증 없음) |
