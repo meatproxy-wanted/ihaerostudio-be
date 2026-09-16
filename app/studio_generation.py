@@ -123,7 +123,11 @@ class StudioGeneration:
                     "번호로 해당 인물을 지칭하고 머리·옷·색 등 외형을 유지하세요. 설명과 그림이 충돌하면 외형은 기준 그림을 따릅니다. "
                     "기준 그림이 있으면 성별·나이·얼굴·의상을 새로 지정하지 말고 각 image 번호의 인물 그대로 자세·상황만 바꾸세요. "
                     "카드에 해당하지 않는 인물을 억지로 추가하거나 원문에 없는 관계를 만들지 마세요. "
-                    "role=person이면 partyId의 인물 한 명만 식별하기 쉽게 그리세요. "
+                    "익명 인물은 가상의 얼굴을 뜻하며 얼굴을 숨기거나 생략하라는 뜻이 아닙니다. "
+                    "사람이 나오면 정면 또는 앞쪽 3/4 구도로 눈·코·입이 보이게 하고 뒷모습·얼굴 가림·얼굴 잘림은 피하세요. "
+                    "role=person이면 partyId의 인물 한 명을 눈높이에서 본 상반신 초상으로 그리세요. "
+                    "머리 전체와 얼굴이 크게 보이게 하고 복잡한 배경보다 얼굴·헤어스타일·의상을 식별하기 쉽게 표현하세요. "
+                    "다른 인물과 관계를 보여줄 때도 두 얼굴이 관객 쪽으로 보이게 배치하세요. 사람이 없는 장면에는 사람을 추가하지 마세요. "
                     "role=decision이면 판결 내용을 확인하는 정적인 장면으로 그리세요. 명령 이행 장면은 금지입니다. "
                     "돈뿐 아니라 봉투·영수증·서류·열쇠도 서로 건네거나 받는 장면을 넣지 마세요. 두 인물의 손은 떨어뜨리고, "
                     "법원 결정 상징을 함께 바라보게 하세요. alt와 meaning에도 지급·반환이 완료되거나 진행 중이라고 쓰지 마세요. "
@@ -147,6 +151,12 @@ class StudioGeneration:
                     self.persist(job)
                 filenames = [item["filename"] for item in uploaded]
                 plan = IllustrationPlan.model_validate(job["plan"])
+                if context["role"] == "person":
+                    plan = plan.model_copy(update={"prompt": plan.prompt +
+                        " Mandatory character portrait framing: exactly one fictional adult in a waist-up portrait, "
+                        "facing the viewer directly or in a three-quarter front view at eye level. "
+                        "Make the face large and clear, with visible eyes, nose and mouth, the entire head in frame, "
+                        "and a simple background. Do not show the person's back or hide the face."})
                 if context["role"] == "decision":
                     plan = plan.model_copy(update={"prompt": plan.prompt +
                         " Mandatory court-decision scene constraint: depict people learning or considering the court order, "
