@@ -22,7 +22,7 @@ def inspect(people, context=None):
 
 
 @pytest.mark.parametrize("change", [
-    {"facialHair": "beard"}, {"faceVisible": False}, {"faceAndHairMatch": False},
+    {"facialHair": "beard"}, {"faceAndHairMatch": False},
     {"upperClothingMatch": False}, {"lowerClothingMatch": False}, {"shoesMatch": False},
     {"referenceImageNumber": None},
 ])
@@ -58,3 +58,8 @@ def test_prompt_repeats_fixed_english_features_and_explicit_absence_of_beard():
     assert "gray shirt" in text and "black sneakers" in text
     assert "Only pose, expression and setting may change" in text
     assert "partyId" not in text
+
+
+
+def test_hidden_face_alone_does_not_reject_candidate():
+    assert inspect([{**PERSON, "faceVisible": False, "facialHair": "unclear"}]).consistent

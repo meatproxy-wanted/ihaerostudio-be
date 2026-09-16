@@ -455,13 +455,13 @@ def test_identity_check_failure_resumes_same_paid_job(setup):
     assert len(submissions(control)) == 1 and service.provider.profile_calls == 2
 
 
-def test_hidden_face_reference_is_rejected_before_comfy_submission(setup):
+def test_multiple_people_reference_is_rejected_before_comfy_submission(setup):
     _, service, _, _, _, control = setup
     attach_characters(setup)
     original = service.provider.call
     def hidden_face(task, payload, schema, **kwargs):
         result = original(task, payload, schema, **kwargs)
-        return result.model_copy(update={"faceVisible": False}) if schema.__name__ == "CharacterAppearance" else result
+        return result.model_copy(update={"personCount": 2}) if schema.__name__ == "CharacterAppearance" else result
     service.provider.call = hidden_face
     response = request_image(setup)
     assert response.status_code == 422 and response.json()["detail"]["code"] == "character_reference_unclear"
