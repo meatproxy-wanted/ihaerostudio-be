@@ -1,5 +1,7 @@
 import io
 import json
+import base64
+import copy
 
 import httpx
 import pytest
@@ -17,6 +19,7 @@ class PromptProvider:
 
     def call(self, task, context, schema):
         self.calls += 1
+        self.context, self.task = context, task
         return schema(prompt="An anonymous adult judge explaining an order; no completed payment.",
                       alt="판사가 명령을 설명하는 모습", meaning="돈을 돌려주라는 법원의 결정")
 
@@ -42,6 +45,9 @@ def setup(client, monkeypatch):
 
     def handler(request):
         control["calls"].append(request)
+        if request.url.path == "/api/upload/image" and request.method == "POST":
+            count = sum(r.url.path == "/api/upload/image" for r in control["calls"])
+            return httpx.Response(201, json={"name": f"{count:064x}.png", "type": "input", "subfolder": ""})
         if request.url.path == "/api/v2/jobs" and request.method == "POST":
             if control["submit_error"] == "timeout":
                 raise httpx.ReadTimeout("private upstream message", request=request)
@@ -71,7 +77,7 @@ def request_image(setup, **kwargs):
 
 
 def submissions(control):
-    return [r for r in control["calls"] if r.method == "POST"]
+    return [r for r in control["calls"] if r.method == "POST" and r.url.path == "/api/v2/jobs"]
 
 
 def test_generates_caches_persists_and_saves_fe_image(setup):
@@ -184,3 +190,192 @@ def test_prompt_failure_does_not_submit_to_comfy(setup):
     service.provider.call = reject
     assert request_image(setup).status_code == 502
     assert not control["calls"]
+
+
+def attach_characters(setup):
+    client, _, project, document, _, _ = setup
+    portraits = []
+    for index, name in enumerate(document["partyNames"]):
+        png = io.BytesIO()
+        Image.new("RGB", (32, 32), "red" if index == 0 else "green").save(png, "PNG")
+        response = client.post(path(project) + "/assist/upload-image",
+                               files={"file": ("character.png", png.getvalue(), "image/png")},
+                               data={"alt": name["displayName"] + " 기준 그림", "meaning": "등장인물"})
+        assert response.status_code == 200, response.text
+        image = response.json()["image"]
+        document["images"].append(image)
+        portraits.append({"id": f"person-{index}", "role": "person", "partyId": name["partyId"], "imageId": image["id"],
+                          "sentences": [{"id": f"person-sentence-{index}", "text": name["displayName"] + "의 역할이에요.",
+                                         "anchors": [], "origin": "manual", "verified": False}]})
+    document["sections"][0]["cards"].extend(portraits)
+    response = client.put(path(project) + "/document", json=document)
+    assert response.status_code == 200, response.text
+    return portraits
+
+
+def test_saved_portraits_are_uploaded_and_condition_the_same_scene(setup):
+    client, service, project, _, _, control = setup
+    portraits = attach_characters(setup)
+    result = request_image(setup)
+    assert result.status_code == 200, result.text
+    references = service.provider.context["characterReferences"]
+    assert [r["partyId"] for r in references] == [p["partyId"] for p in portraits]
+    assert [r["imageNumber"] for r in references] == [1, 2]
+    assert all(c["descriptions"] and c["legalStatus"] for c in service.provider.context["characters"])
+    assert "data:image" not in json.dumps(service.provider.context)
+    uploads = [r for r in control["calls"] if r.url.path == "/api/upload/image"]
+    assert len(uploads) == 2
+    assert all(b"\x89PNG" in r.content and r.headers["X-API-Key"] == "private-comfy-test-key" for r in uploads)
+    graph = json.loads(submissions(control)[0].content)["workflow"]
+    assert graph["1"]["inputs"]["unet_name"] == "flux-2-klein-4b-fp8.safetensors"
+    assert [n["inputs"]["image"] for n in graph.values() if n["class_type"] == "LoadImage"] == [f"{n:064x}.png" for n in [1, 2]]
+    assert len([n for n in graph.values() if n["class_type"] == "ReferenceLatent"]) == 4
+    assert request_image(setup).json() == result.json()
+    assert len(submissions(control)) == 1 and len([r for r in control["calls"] if r.url.path == "/api/upload/image"]) == 2
+    # Changing the saved identity information invalidates the dependent scene cache.
+    latest = client.get(path(project) + "/document").json()
+    latest["sections"][0]["cards"][-1]["sentences"][0]["text"] = "보증금을 돌려줘야 하는 사람이에요."
+    assert client.put(path(project) + "/document", json=latest).status_code == 200
+    assert request_image(setup).status_code == 200
+    assert len(submissions(control)) == 2
+
+
+def test_replaced_portrait_during_generation_rejects_stale_scene(setup):
+    client, _, project, _, _, control = setup
+    attach_characters(setup)
+    def replace():
+        latest = client.get(path(project) + "/document").json()
+        latest["sections"][0]["cards"][-1]["imageId"] = None
+        assert client.put(path(project) + "/document", json=latest).status_code == 200
+    control["on_poll"] = replace
+    response = request_image(setup)
+    assert response.status_code == 409 and response.json()["detail"]["code"] == "image_card_changed"
+    assert len(client.app.state.studio.get(project["id"], "alice")[0]["assets"]) == 2  # Only portrait uploads.
+
+
+def test_portrait_generation_does_not_copy_other_characters(setup):
+    client, service, project, _, _, control = setup
+    portraits = attach_characters(setup)
+    response = client.post(path(project) + "/assist/images", json={"cardId": portraits[0]["id"]})
+    assert response.status_code == 200, response.text
+    assert service.provider.context["characterReferences"] == []
+    assert [c["partyId"] for c in service.provider.context["characters"]] == [portraits[0]["partyId"]]
+    assert not [r for r in control["calls"] if r.url.path == "/api/upload/image"]
+    latest = client.get(path(project) + "/document").json()
+    latest["images"].append({"id": "selected-new-portrait", **response.json()["candidates"][0], "source": "library"})
+    next(c for c in latest["sections"][0]["cards"] if c["id"] == portraits[0]["id"])["imageId"] = "selected-new-portrait"
+    assert client.put(path(project) + "/document", json=latest).status_code == 200
+    assert client.post(path(project) + "/assist/images", json={"cardId": portraits[0]["id"]}).json() == response.json()
+    assert len(submissions(control)) == 1
+
+
+def test_reference_must_belong_to_the_same_project_and_owner(setup):
+    _, service, project, _, _, control = setup
+    attach_characters(setup)
+    with service.store.store.connect() as db:
+        db.execute("UPDATE studio_assets SET owner='someone-else' WHERE project_id=?", (project["id"],))
+    response = request_image(setup)
+    assert response.status_code == 422 and response.json()["detail"]["code"] == "character_reference_invalid"
+    assert service.provider.calls == 0 and not control["calls"]
+
+
+def test_reference_retry_reuses_uploads_plan_and_paid_submission_key(setup):
+    _, service, _, _, _, control = setup
+    attach_characters(setup)
+    control["submit_error"] = 402
+    assert request_image(setup).json()["detail"]["code"] == "comfy_insufficient_credits"
+    control["submit_error"] = None
+    assert request_image(setup).status_code == 200
+    assert service.provider.calls == 1
+    assert len([r for r in control["calls"] if r.url.path == "/api/upload/image"]) == 2
+    assert len({r.headers["Idempotency-Key"] for r in submissions(control)}) == 1
+
+
+def test_unapplied_candidate_is_not_used_as_a_character_reference(setup):
+    client, service, project, _, _, _ = setup
+    portraits = attach_characters(setup)
+    document = client.get(path(project) + "/document").json()
+    for card in document["sections"][0]["cards"]:
+        if card["id"] in {p["id"] for p in portraits}:
+            card["imageId"] = None
+    assert client.put(path(project) + "/document", json=document).status_code == 200
+    assert request_image(setup).status_code == 200
+    assert service.provider.context["characterReferences"] == []
+
+
+def test_conflicting_portraits_and_too_many_references_fail_before_spending(setup):
+    from app.studio_generation import image_context
+    _, service, project, _, target, control = setup
+    portraits = attach_characters(setup)
+    state = service.store.get(project["id"], "alice")[0]
+    duplicate = copy.deepcopy(portraits[0])
+    duplicate["id"] = "conflicting-portrait"
+    duplicate["imageId"] = portraits[1]["imageId"]
+    state["document"]["sections"][0]["cards"].append(duplicate)
+    with pytest.raises(HTTPException) as error:
+        image_context(state, target["id"])
+    assert error.value.detail["code"] == "character_reference_ambiguous"
+    state["document"]["sections"][0]["cards"].pop()
+    for n in range(5):
+        card = copy.deepcopy(portraits[0])
+        card.update(id=f"extra-{n}", partyId=f"extra-party-{n}")
+        state["document"]["partyNames"].append({"partyId": card["partyId"], "displayName": f"추가 인물 {n}"})
+        state["document"]["sections"][0]["cards"].append(card)
+    with pytest.raises(HTTPException) as error:
+        image_context(state, target["id"])
+    assert error.value.detail["code"] == "character_reference_limit"
+    assert service.provider.calls == 0 and not control["calls"]
+
+
+def test_legacy_data_uri_portraits_are_supported_without_url_fetch(setup):
+    from app.studio_characters import reference_bytes
+    from app.studio_generation import image_context
+    _, service, project, _, target, _ = setup
+    attach_characters(setup)
+    state = service.store.get(project["id"], "alice")[0]
+    first = state["assets"][0]
+    mime, raw = service.store.asset(first["id"])
+    old = first["src"]
+    first["src"] = f"data:{mime};base64," + base64.b64encode(raw).decode()
+    next(i for i in state["document"]["images"] if i["src"] == old)["src"] = first["src"]
+    reference = image_context(state, target["id"])["characterReferences"][0]
+    assert reference_bytes(service.store, state, "alice", reference).startswith(b"\x89PNG")
+
+
+def test_unknown_reference_submission_never_reuploads_or_resubmits(setup):
+    _, service, _, _, _, control = setup
+    attach_characters(setup)
+    control["submit_error"] = "timeout"
+    assert request_image(setup).status_code == 503
+    assert request_image(setup).json()["detail"]["code"] == "image_submission_unknown"
+    assert service.provider.calls == 1 and len(submissions(control)) == 1
+    assert len([r for r in control["calls"] if r.url.path == "/api/upload/image"]) == 2
+
+
+def test_new_combo_catalog_and_uploaded_hash_preflight(setup):
+    _, service, _, _, _, _ = setup
+    from app.comfy import ComfyCloud
+    from app.video_models import WorkflowNode
+    cloud = ComfyCloud(service.config)
+    cloud.request = lambda *a, **k: {
+        "LoadImage": {"input": {"required": {"image": [[], {"image_upload": True}]}}, "output": ["IMAGE"]},
+        "Choice": {"input": {"required": {"method": ["COMBO", {"options": ["lanczos"]}]}}, "output": []}}
+    content_hash = "a" * 64 + ".png"
+    graph = {"1": WorkflowNode(class_type="LoadImage", inputs={"image": content_hash}),
+             "2": WorkflowNode(class_type="Choice", inputs={"method": "lanczos"})}
+    assert cloud.preflight(graph, allowed={"LoadImage", "Choice"}, uploaded_images=[content_hash]).compatible
+    assert not cloud.preflight(graph, allowed={"LoadImage", "Choice"}).compatible
+    graph["2"].inputs["method"] = "not-supported"
+    assert not cloud.preflight(graph, allowed={"LoadImage", "Choice"}, uploaded_images=[content_hash]).compatible
+
+
+def test_decision_workflow_keeps_order_separate_from_completed_payment(setup):
+    client, _, project, document, card, control = setup
+    document["sections"][0]["cards"].remove(card)
+    card["role"] = "decision"
+    document["sections"][1]["cards"].append(card)
+    assert client.put(path(project) + "/document", json=document).status_code == 200
+    assert request_image(setup).status_code == 200
+    graph = json.loads(submissions(control)[0].content)["workflow"]
+    prompt = graph["4"]["inputs"]["clip_l"]
+    assert "Mandatory court-decision scene constraint" in prompt and "Keep their hands apart" in prompt

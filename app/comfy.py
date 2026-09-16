@@ -57,19 +57,19 @@ class ComfyCloud:
         if not self.config.comfy_api_key.strip():
             fail(503, "comfy_not_configured", "서버의 COMFY_CLOUD_API_KEY를 설정하세요. 미디어는 생성되지 않았습니다.")
 
-    def request(self, method, url, *, data=None, key=None):
+    def request(self, method, url, *, data=None, key=None, files=None, form=None):
         self.require_key()
         if urlsplit(url).scheme != "https" or urlsplit(url).netloc != "cloud.comfy.org":
             raise ComfyFailure("comfy_invalid_url")
         headers = {"Authorization": "Bearer " + self.config.comfy_api_key}
-        if "/api/object_info" in url:
-            # Cloud's model/node catalog is still on its v1 surface.
+        if urlsplit(url).path in {"/api/object_info", "/api/upload/image"}:
+            # Catalog and LoadImage-compatible uploads still use Cloud's v1 surface.
             headers = {"X-API-Key": self.config.comfy_api_key}
         if key:
             headers["Idempotency-Key"] = key
         try:
             with httpx.Client(timeout=httpx.Timeout(45, connect=5), trust_env=False, follow_redirects=False) as client:
-                response = client.request(method, url, headers=headers, json=data)
+                response = client.request(method, url, headers=headers, json=data, files=files, data=form)
             response.raise_for_status()
             result = response.json()
             if not isinstance(result, dict):
@@ -90,7 +90,22 @@ class ComfyCloud:
         except (httpx.HTTPError, ValueError):
             raise ComfyFailure("comfy_connection_or_response_error", uncertain=True) from None
 
-    def preflight(self, graph, *, allowed=None, preset="wan22-5b-t2v-v1"):
+    def upload_reference(self, data, filename):
+        """Use Cloud's LoadImage upload endpoint; v2 asset hashes are not input filenames.
+
+        https://docs.comfy.org/api-reference/cloud/file/upload-an-image-file
+        Cloud returns a flat content-addressed filename and ignores subfolder storage.
+        """
+        result = self.request("POST", ORIGIN + "/api/upload/image",
+                              files={"image": (filename, data, "image/png")},
+                              form={"type": "input", "overwrite": "false"})
+        name = result.get("name")
+        if (not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_-][A-Za-z0-9_.-]{0,199}", name)
+                or ".." in name or result.get("type") != "input" or result.get("subfolder") not in (None, "")):
+            raise ComfyFailure("comfy_invalid_response")
+        return name
+
+    def preflight(self, graph, *, allowed=None, preset="wan22-5b-t2v-v1", uploaded_images=()):
         validate_graph(graph, allowed) if allowed is not None else validate_graph(graph)
         info = self.request("GET", ORIGIN + "/api/object_info")
         issues = []
@@ -112,6 +127,10 @@ class ComfyCloud:
                     issues.append(f"{node.class_type}.{name}: 지원하지 않는 입력입니다.")
                     continue
                 kind = spec[0]
+                # The filename enum may lag behind uploads. Only names returned by
+                # our authenticated upload are allowed to bypass that enum.
+                if node.class_type == "LoadImage" and name == "image" and isinstance(value, str) and value in uploaded_images:
+                    continue
                 if isinstance(value, list):
                     upstream = graph[value[0]]
                     outputs = info.get(upstream.class_type, {}).get("output", [])
@@ -119,6 +138,10 @@ class ComfyCloud:
                         issues.append(f"{key}.{name}: 노드 출력 타입이 일치하지 않습니다.")
                 elif isinstance(kind, list):
                     if value not in kind:
+                        issues.append(f"{node.class_type}.{name}: 선택한 모델/옵션이 없습니다.")
+                elif kind == "COMBO":
+                    options = spec[1].get("options", []) if len(spec) > 1 and isinstance(spec[1], dict) else []
+                    if value not in options:
                         issues.append(f"{node.class_type}.{name}: 선택한 모델/옵션이 없습니다.")
                 elif kind in {"INT", "FLOAT", "STRING", "BOOLEAN"}:
                     valid = {"INT": type(value) is int, "FLOAT": type(value) in {int, float},
