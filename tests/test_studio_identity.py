@@ -58,3 +58,16 @@ def test_prompt_repeats_fixed_english_features_and_explicit_absence_of_beard():
     assert "gray shirt" in text and "black sneakers" in text
     assert "Only pose, expression and setting may change" in text
     assert "partyId" not in text
+
+
+
+@pytest.mark.parametrize("faces,portrait,expected", [
+    ([], True, False), ([], False, True), ([False], True, False),
+    ([True], True, True), ([True, True], True, False), ([True, False], False, False),
+])
+def test_face_gate_checks_every_person_and_requires_one_portrait(faces, portrait, expected):
+    from app.studio_identity import check_faces
+    class Observer:
+        def call(self, task, payload, schema, *, images):
+            return schema(visibleFaces=faces, alt="관찰 결과")
+    assert check_faces(Observer(), b"image", portrait).consistent == expected

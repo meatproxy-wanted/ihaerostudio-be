@@ -48,6 +48,29 @@ class SceneIdentity(Wire):
     alt: str = Field(min_length=1, max_length=500)
 
 
+class FaceVisibility(Wire):
+    visibleFaces: list[bool] = Field(max_length=100)
+    alt: str = Field(min_length=1, max_length=500)
+
+
+def check_faces(provider, candidate, portrait=False):
+    result = provider.call(
+        "생성 그림의 사람마다 눈·코·입이 모두 보이는 정면 또는 앞쪽 3/4 얼굴인지 visibleFaces에 기록하세요. "
+        "뒷모습, 옆모습만 보임, 얼굴 가림, 얼굴 잘림, 너무 작아 식별 불가이면 false입니다. "
+        "사람이 없으면 빈 배열입니다. 기대하는 구도를 추측하지 말고 실제 픽셀만 관찰하세요. alt는 한국어입니다.",
+        {}, FaceVisibility, images=[candidate])
+    valid = all(result.visibleFaces) and (not portrait or len(result.visibleFaces) == 1)
+    return IdentityCheck(
+        consistent=valid,
+        issues=[] if valid else ["인물의 정면 얼굴을 확인할 수 없어요."],
+        correction="" if valid else (
+            "Camera directly in front of the people at eye level. All people face the viewer. "
+            "Clearly show every person's eyes, nose and mouth, entire head in frame. "
+            "Use a simple background. No rear view or side profile."
+            + (" Exactly one adult, waist-up portrait, face large and centered." if portrait else "")),
+        alt=result.alt)
+
+
 class CharacterIdentity:
     def __init__(self, store, provider):
         self.store, self.provider = store, provider
@@ -97,7 +120,7 @@ class CharacterIdentity:
             "그림에서 잘려서 보이지 않는 하의·신발은 보이는 부분과 모순되지 않으면 true로 두고 변화를 추측하지 마세요. "
             "자세·표정·원근·주름·조명에 따른 작은 차이는 허용하고, 의상 종류나 색이 바뀐 실제 차이만 differences에 적으세요. "
             "수염 유무는 facialHair에 실제 보이는 대로 적으며 기준에 맞춰 답을 바꾸지 마세요. "
-            "얼굴을 관찰할 수 없으면 faceVisible=false입니다. alt는 첨부된 그림만 관찰하여 한국어로 쓰세요.",
+            "정면 또는 앞쪽 3/4 얼굴의 눈·코·입을 모두 관찰할 수 없으면 faceVisible=false입니다. 뒷모습·옆모습·잘리거나 가려진 얼굴도 false입니다. alt는 첨부된 그림만 관찰하여 한국어로 쓰세요.",
             {"appearances": profiles}, SceneIdentity, images=[candidate])
         known = {p["imageNumber"]: p for p in profiles}
         issues, seen = [], set()
