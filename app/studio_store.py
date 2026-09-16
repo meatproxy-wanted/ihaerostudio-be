@@ -16,6 +16,11 @@ class StudioStore:
                 deleted INTEGER NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS studio_owner ON studio_projects(owner, deleted, updated_at);
+            CREATE TABLE IF NOT EXISTS studio_assets (
+                id TEXT PRIMARY KEY, project_id TEXT NOT NULL, owner TEXT NOT NULL,
+                content_type TEXT NOT NULL, body BLOB NOT NULL, byte_size INTEGER NOT NULL,
+                created_at TEXT NOT NULL
+            );
             """)
 
     def create(self, owner, state):
@@ -57,6 +62,22 @@ class StudioStore:
             db.execute("UPDATE studio_projects SET deleted=1,version=version+1 WHERE id=? AND owner=?",
                        (project_id, owner))
 
+    @staticmethod
+    def insert_asset(db, asset_id, project_id, owner, content_type, data):
+        """Adds a picture inside a transaction the caller already opened."""
+        db.execute("INSERT INTO studio_assets VALUES(?,?,?,?,?,?,?)",
+                   (asset_id, project_id, owner, content_type, data, len(data), now().replace("+00:00", "Z")))
+
+    def put_asset(self, asset_id, project_id, owner, content_type, data):
+        with self.store.connect() as db:
+            self.insert_asset(db, asset_id, project_id, owner, content_type, data)
+
+    def asset(self, asset_id):
+        """The picture's content type and bytes, or None. Pictures are public: their ids are unguessable."""
+        with self.store.connect() as db:
+            row = db.execute("SELECT content_type, body FROM studio_assets WHERE id=?", (asset_id,)).fetchone()
+        return (row["content_type"], bytes(row["body"])) if row else None
+
     def public(self, project_id):
         with self.store.connect() as db:
             row = db.execute("SELECT body FROM studio_projects WHERE id=? AND deleted=0", (project_id,)).fetchone()
@@ -67,3 +88,13 @@ class StudioStore:
             if publication:
                 return {"status": "available", "publication": publication}
         return {"status": "unavailable"}
+
+
+def asset_url(base_url, asset_id):
+    """Where a stored picture is served. Kept absolute because the frontend puts it straight into <img src>."""
+    return f"{base_url}/api/studio/assets/{asset_id}"
+
+
+def asset_size(image):
+    """Bytes a stored picture takes. Older rows kept the whole picture inside src as a data URI."""
+    return image.get("byteSize") or len(image["src"])

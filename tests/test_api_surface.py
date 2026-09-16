@@ -26,7 +26,7 @@ def test_only_frontend_routes_are_served(client):
         "/projects/{project_id}/publications": {"get", "post"},
         "/projects/{project_id}/publications/{publication_id}": {"get"},
         "/projects/{project_id}/public": {"put"},
-        "/reader/{project_id}": {"get"},
+        "/reader/{project_id}": {"get"}, "/assets/{asset_id}": {"get"},
         "/demo/sample-text": {"get"}, "/demo/reset": {"post"},
     }
     for action in ["simplify", "split", "terms", "explain", "images", "upload-image"]:
@@ -54,6 +54,7 @@ def test_only_frontend_routes_are_served(client):
     assert client.get("/docs").status_code == client.get("/redoc").status_code == 200
     assert schema["paths"][BASE + "/projects/text"]["post"]["security"]
     assert not schema["paths"][BASE + "/reader/{project_id}"]["get"].get("security")
+    assert not schema["paths"][BASE + "/assets/{asset_id}"]["get"].get("security")
     assert not hasattr(client.app.state, "images")
     assert not hasattr(client.app.state, "videos")
 

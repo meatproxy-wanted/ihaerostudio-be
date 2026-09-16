@@ -1,5 +1,4 @@
 """HTTP implementation of every ihaerostudio-fe ApiClient feature group."""
-import base64
 import copy
 import re
 from typing import Annotated
@@ -15,7 +14,7 @@ from .sources import MAX_PDF_BYTES, extract_pdf, source_from_pages
 from .store import fail
 from .studio_domain import (invalidate_review, reader_content, require_document, review_items,
                             sentences, structure_content, summarize_document, sync_review, timestamp, validate_document, validate_structure)
-from .studio_store import StudioStore
+from .studio_store import StudioStore, asset_size, asset_url
 from .studio_images import MAX_UPLOAD, cleaned_upload
 from .studio_generation import StudioGeneration
 
@@ -256,13 +255,26 @@ def register_studio(api, config, base_store, provider, owner):
         data = await file.read(MAX_UPLOAD + 1)
         await file.close()
         cleaned, content_type = await run_in_threadpool(cleaned_upload, data, file.filename or "image.png")
-        image = {"id": uid(), "src": f"data:{content_type};base64," + base64.b64encode(cleaned).decode(),
-                 "alt": alt, "meaning": meaning, "source": "upload"}
-        if sum(len(i["src"]) for i in state["assets"]) + len(image["src"]) > 12 * 1024 * 1024:
+        if sum(asset_size(i) for i in state["assets"]) + len(cleaned) > 12 * 1024 * 1024:
             fail(413, "image_limit", "자료의 그림 용량 한도를 넘었어요. 작은 그림을 사용해 주세요.")
-        state["assets"].append(image)
+        asset_id = uid()
+        image = {"id": asset_id, "src": asset_url(config.public_base_url, asset_id),
+                 "alt": alt, "meaning": meaning, "source": "upload"}
+        # The bytes go to their own row; the project keeps only the URL, so documents stay small.
+        store.put_asset(asset_id, project_id, maker, content_type, cleaned)
+        state["assets"].append({**image, "byteSize": len(cleaned)})
         store.save(state, maker, version)
         return {"image": image}
+
+    @router.get("/assets/{asset_id}")
+    def asset(asset_id: str):
+        found = store.asset(asset_id)
+        if found is None:
+            fail(404, "not_found", "그림을 찾을 수 없어요.")
+        content_type, data = found
+        return Response(content=data, media_type=content_type, headers={
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'"})
 
     @router.get("/projects/{project_id}/review")
     def latest_review(project_id: str, maker: Owner):

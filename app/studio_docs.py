@@ -76,7 +76,7 @@ API_DESCRIPTION = """
 Comfy 완료를 90초간 기다려도 끝나지 않으면 `503 image_in_progress`를 반환하며 같은 요청으로 이어서 확인합니다.
 이 90초는 OpenAI 장면 설명 생성·사전 점검·파일 다운로드 시간을 포함한 전체 HTTP 제한 시간이 아닙니다.
 Comfy 접수 결과가 불확실하거나 작업이 실패·만료되면 자동으로 새 유료 작업을 제출하지 않습니다.
-그림 파일은 서버에 PNG data URI로 보관하므로 제공자의 임시 URL 만료에 영향을 받지 않습니다.
+그림 파일은 서버가 PNG로 보관하고 `/api/studio/assets/{id}` 주소로 내주므로 제공자의 임시 URL 만료에 영향을 받지 않습니다.
 
 실제 AI를 호출하면 해당 원문·사건 구조·편집 텍스트가 OpenAI로 전달되고, 그림 생성 시 장면 설명이 Comfy로 전달됩니다.
 그림과 대체텍스트는 생성 초안이며 제작자의 의미 대조가 필요합니다. 검토 API는 의미를 판정하는 AI가 아니라 규칙 점검입니다.
@@ -89,7 +89,7 @@ Comfy 접수 결과가 불확실하거나 작업이 실패·만료되면 자동�
 원본 제공자 오류·API 키는 응답으로 노출하지 않습니다. 개별 API의 Responses에서 발생 조건과 예시를 확인하세요.
 
 텍스트 100~100,000자, PDF 4.5MB·100쪽·추출 텍스트 150,000자·문단 300개, 그림 업로드 2MB,
-자료당 그림 100개·base64 src 합계 12MiB, 전체 HTTP 요청 본문 22MiB 제한이 있습니다.
+자료당 그림 100개·그림 파일 합계 12MiB, 전체 HTTP 요청 본문 5MB 제한이 있습니다.
 문서는 전체 카드 300개·문장 1,500개를 넘을 수 없습니다. 스캔 PDF의 OCR은 제공하지 않습니다.
 
 `/health`는 상태 확인 전용이며 Swagger 목록에서 제외합니다. `ai_provider`는 선택한 서버 모드이고
@@ -260,7 +260,7 @@ describe("explain", "용어 설명 제안 — 사건 문맥에 맞춘 쉬운 풀
     "풀이를 대조한 뒤 FE에서 glossary 항목의 id·term·explanation을 구성하고 문서 전체를 저장합니다.", ref("Explanation"), {"explanation": "집을 빌릴 때 맡겨 두는 돈이에요. 이 사건에서는 계약이 끝난 뒤 돌려받을 돈을 말해요."}, errors="not_found ai_not_configured " + AI_ERRORS, body={"term": "임대차보증금", "context": "계약이 끝난 뒤 보증금을 돌려달라고 했습니다."})
 describe("image_candidates", "그림 후보 생성·조회 — OpenAI 장면 설명과 Comfy 그림",
     "편집기의 카드 → 그림 넣기/바꾸기 → 그림 후보 보기에서 호출합니다.", "JSON {cardId}를 보냅니다. 카드 문장·원문 근거·당사자 표시 이름은 저장된 문서에서 읽으므로 자동 저장 완료 후 요청하세요. 프롬프트·워크플로·jobId는 FE에서 보내지 않습니다.",
-    "{candidates:[{src,alt,meaning}]}를 반환합니다. 실제 AI 모드에서는 해당 카드의 Comfy 결과 1장이 먼저, 업로드 자산이 이어집니다. 생성 결과 src는 보관된 PNG data URI입니다. 예시의 작은 PNG는 형식 설명용이며 실제 생성 품질 예시가 아닙니다.",
+    "{candidates:[{src,alt,meaning}]}를 반환합니다. 실제 AI 모드에서는 해당 카드의 Comfy 결과 1장이 먼저, 업로드 자산이 이어집니다. 생성 결과 src는 서버가 보관한 PNG의 주소(/api/studio/assets/{id})입니다. 예시의 작은 PNG는 형식 설명용이며 실제 생성 품질 예시가 아닙니다.",
     "OpenAI가 장면·대체텍스트·의미 설명을 만들고 고정 Flux Schnell 워크플로로 768×768 한 장을 생성합니다. 같은 카드 내용은 저장/진행 작업을 재사용합니다. 카드 내용이 바뀌면 새 생성이 될 수 있습니다. 데모는 업로드 후보만 반환합니다. 후보는 프로젝트 자산으로 보관하지만 문서에 자동 연결하지 않습니다.\n\nComfy 완료 대기 90초 후 image_in_progress이면 같은 요청으로 이어서 확인합니다. 접수 불확실·실행 실패·만료는 새 유료 작업을 자동 제출하지 않습니다. 생성 중 카드가 바뀌면 image_card_changed로 오래된 후보 적용을 막습니다. 브라우저 요청 취소가 제공자 작업 취소를 뜻하지는 않습니다.",
     "사용자가 고른 후보에 FE 그림 ID와 source=library를 부여하고 document.images에 넣습니다. 대상 card.imageId를 연결한 뒤 PUT document로 저장하세요. alt와 meaning은 실제 그림과 대조합니다. 편집 중 FE가 이전 후보를 캐시했다면 최신 내용 저장 후 새 요청이 실제 전송되도록 새로고침합니다.", ref("StudioImageCandidates"), ex.IMAGE_CANDIDATES,
     errors="not_found image_limit image_too_large invalid_image unsupported_image image_card_changed comfy_not_configured comfy_auth_error comfy_insufficient_credits comfy_rate_limited comfy_workflow_unavailable image_in_progress image_submission_unknown comfy_connection_or_response_error comfy_invalid_response comfy_asset_host_not_allowed comfy_download_failed image_missing_output image_generation_failed " + AI_ERRORS,
@@ -326,6 +326,11 @@ describe("reader", "공개 독자 자료 — 인증 없이 지정 게시본 읽�
     "공개 상태면 {status:'available', publication: 전체 게시본}입니다. 미공개·공개 해제·삭제·존재하지 않는 자료는 모두 200 {status:'unavailable'}입니다. status를 먼저 분기하고 unavailable에는 publication이 없습니다.",
     "공개로 지정된 검토 완료 스냅샷만 반환합니다. 미검토 초안·현재 편집 내용·원문 근거·검토 메모를 반환하지 않습니다. AI 실행이나 새 게시본 생성도 없습니다.",
     "available이면 publication.content로 읽기 화면을 구성합니다. unavailable이면 읽을 수 없다는 안내를 보여 주고 제작자 인증을 요구하지 않습니다.", ref("StudioPublicReading"), {"status": "available", "publication": ex.PUBLICATION}, alternatives={"unavailable": ("미공개·삭제·자료 없음", {"status": "unavailable"})})
+describe("asset", "그림 파일 조회 — 인증 없이 보관된 그림 바이너리",
+    "문서·게시본·독자 응답의 images[].src, 그림 후보의 src를 <img>가 불러올 때 브라우저가 직접 호출합니다.", "asset_id는 src 주소의 마지막 경로 조각입니다. 인증 헤더 없이 호출하며 본문·쿼리는 없습니다.",
+    "200과 그림 바이너리(PNG 또는 정제된 SVG)를 Content-Type과 함께 반환합니다. 없는 ID는 404 not_found입니다. 응답은 변하지 않으므로 오래 캐시됩니다.",
+    "읽기만 하며 자료를 바꾸지 않습니다. ID는 추측할 수 없는 값이지만 주소를 아는 누구나 볼 수 있으므로 독자 공개 여부와 무관하게 접근됩니다.",
+    "FE 코드가 따로 호출할 일은 없고 src를 그대로 <img src>에 넣으면 됩니다.", {"type": "string", "format": "binary"}, None, errors="not_found")
 describe("sample_text", "가상 원문 예제 조회 — 새 자료 입력용 문자열",
     "새 자료 화면에서 예제 판결문 채우기를 사용할 때 호출합니다.", "제작자 토큰으로 호출하며 본문·쿼리 파라미터는 없습니다. 실제 AI 모드에서도 조회할 수 있습니다.",
     "JSON 문자열 자체를 반환합니다. {text: ...} 객체가 아닙니다. 내용은 실제 사건이 아닌 가상 임대차보증금 반환 예제입니다.",
@@ -371,25 +376,30 @@ def enrich_openapi(schema):
             note = FIELD_DESCRIPTIONS.get(name, {}).get(key, COMMON_FIELDS.get(key))
             if note and "description" not in prop:
                 prop["description"] = note
-    schema["tags"] = [{"name": "FE 연동", "description": "프론트가 실제 사용하는 31개 업무 동작입니다. 각 행의 한글 제목을 펼쳐 요청·응답·오류 예시와 다음 호출 순서를 확인하세요."}]
+    schema["tags"] = [{"name": "FE 연동", "description": "프론트가 실제 사용하는 32개 업무 동작입니다. 각 행의 한글 제목을 펼쳐 요청·응답·오류 예시와 다음 호출 순서를 확인하세요."}]
     schema["components"]["securitySchemes"]["HTTPBearer"]["description"] = (
-        "제작자 백엔드 토큰 값만 입력합니다. Swagger가 Bearer 헤더를 붙입니다. "
-        "로컬 기본값은 dev-only-change-me이며 운영에서는 API_KEYS에 등록한 별도 토큰을 사용합니다. "
-        "OpenAI/Comfy 키를 입력하는 곳이 아니며 별도 로그인 API는 없습니다. 공개 독자 API는 인증이 필요하지 않습니다.")
+        "토큰 값만 입력합니다. Swagger가 Bearer 헤더를 붙입니다. "
+        "익명 모드(기본)에서는 16자 이상의 아무 토큰이나 자기 작업함이 되고, AUTH_MODE=keys에서는 API_KEYS에 등록한 토큰만 통과합니다. "
+        "OpenAI/Comfy 키를 입력하는 곳이 아니며 별도 로그인 API는 없습니다. 공개 독자 API와 그림 파일 API는 인증이 필요하지 않습니다.")
     for path, methods in schema["paths"].items():
         for method, operation in methods.items():
             name = operation["operationId"].split("_api_studio_", 1)[0]
             doc = OPS[name]
             operation.update(summary=doc["summary"], description=doc["description"])
-            if name != "reader":
+            public = name in {"reader", "asset"}
+            if not public:
                 operation["description"] += "\n\n**인증:** 제작자 Bearer 토큰이 필요합니다. 다른 제작자의 자료에는 접근할 수 없습니다."
-            codes = ([] if name == "reader" else ["unauthorized"]) + doc["errors"]
+            codes = ([] if public else ["unauthorized"]) + doc["errors"]
             if "requestBody" in operation:
                 codes.append("request_too_large")
             operation["responses"] = error_responses(codes, "requestBody" in operation)
             status = "204" if name in {"remove", "reset"} else "201" if name in {"create_text", "create_pdf"} else "200"
             if status == "204":
                 operation["responses"][status] = {"description": "처리 완료. 응답 본문이 없습니다."}
+            elif name == "asset":
+                operation["responses"][status] = {"description": "그림 바이너리. Content-Type은 image/png 또는 image/svg+xml입니다.",
+                    "content": {"image/png": {"schema": {"type": "string", "format": "binary"}},
+                                "image/svg+xml": {"schema": {"type": "string", "format": "binary"}}}}
             else:
                 examples = {"success": {"summary": "가상 자료의 성공 응답 예시", "value": deepcopy(doc["example"])}}
                 examples.update({key: {"summary": title, "value": deepcopy(value)} for key, (title, value) in doc["alternatives"].items()})
@@ -411,7 +421,7 @@ def enrich_openapi(schema):
                 media = operation["requestBody"]["content"]["multipart/form-data"]
                 body_model = schemas[media["schema"]["$ref"].rsplit("/", 1)[-1]]
                 props = body_model["properties"]
-                props["file"]["description"] = "업로드할 원본 파일 바이너리. PDF는 20MiB, 그림은 2MiB 이하입니다. 로컬 파일 경로 문자열을 JSON으로 보내지 마세요."
+                props["file"]["description"] = "업로드할 원본 파일 바이너리. PDF는 4.5MB, 그림은 2MiB 이하입니다. 로컬 파일 경로 문자열을 JSON으로 보내지 마세요."
                 if name == "create_pdf":
                     props["settings"].update(description="Settings 객체를 JSON.stringify한 문자열. multipart의 텍스트 필드로 보냅니다.", example=json.dumps(ex.SETTINGS))
                 else:

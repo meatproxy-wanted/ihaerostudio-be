@@ -64,8 +64,8 @@ PUBLISHED_PROJECT = deepcopy(COMPLETE_PROJECT)
 PUBLISHED_PROJECT["publication"].update(latestVersion=1, latestContentRevision=0)
 PUBLIC_PROJECT = deepcopy(PUBLISHED_PROJECT)
 PUBLIC_PROJECT["publication"].update(publicPublicationId=PUBLICATION["id"], publicVersion=1)
-# A tiny inert PNG for the wire-format example, not an example of generated artwork.
+# The picture itself is served by GET /api/studio/assets/{id}; documents carry only the address.
 IMAGE = {"id": "image-example", "source": "upload",
-         "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC",
+         "src": "https://api.example.com/api/studio/assets/image-example",
          "alt": "API 형식을 설명하기 위한 작은 예시 그림", "meaning": "실제 생성 결과 대신 응답의 데이터 형식만 보여주는 예시입니다."}
 IMAGE_CANDIDATES = {"candidates": [{k: IMAGE[k] for k in ("src", "alt", "meaning")}]}

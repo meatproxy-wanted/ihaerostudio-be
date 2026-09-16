@@ -6,6 +6,11 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
+try:
+    import turso_serverless
+except ImportError:  # pragma: no cover - only when the optional client is missing
+    turso_serverless = None
+
 from .models import Document, HistoryEntry, now
 
 
@@ -14,12 +19,26 @@ def fail(status: int, code: str, message: str):
 
 
 class Store:
-    def __init__(self, path: str):
-        self.path = path
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
+    """The database behind every store: a SQLite file, or Turso (SQL over HTTP) when a URL is set.
+
+    Both clients follow the sqlite3 DB-API, so callers write plain SQL against `connect()` and
+    read rows by column name; the only differences live in this class.
+    """
+
+    def __init__(self, path: str, remote_url: str | None = None, remote_token: str | None = None):
+        self.path, self.remote_url, self.remote_token = path, remote_url or None, remote_token or None
+        if self.remote_url and turso_serverless is None:
+            raise RuntimeError("TURSO_DATABASE_URL is set but the turso-serverless package is not installed")
+        if not self.remote_url:
+            try:
+                Path(path).parent.mkdir(parents=True, exist_ok=True)
+            except OSError as error:
+                raise RuntimeError(f"Cannot create the SQLite directory for {path}. On a host without a writable disk, "
+                                   "set TURSO_DATABASE_URL and TURSO_AUTH_TOKEN instead.") from error
         with self.connect() as db:
+            if not self.remote_url:
+                db.execute("PRAGMA journal_mode=WAL")
             db.executescript("""
-            PRAGMA journal_mode=WAL;
             CREATE TABLE IF NOT EXISTS documents (
               id TEXT PRIMARY KEY, owner TEXT NOT NULL, version INTEGER NOT NULL,
               body TEXT NOT NULL, original BLOB
@@ -41,10 +60,18 @@ class Store:
             );
             """)
 
+    @property
+    def kind(self) -> str:
+        return "turso" if self.remote_url else "sqlite"
+
     @contextmanager
     def connect(self):
-        db = sqlite3.connect(self.path, timeout=10)
-        db.row_factory = sqlite3.Row
+        if self.remote_url:
+            db = turso_serverless.connect(self.remote_url, auth_token=self.remote_token)
+            db.row_factory = turso_serverless.Row
+        else:
+            db = sqlite3.connect(self.path, timeout=10)
+            db.row_factory = sqlite3.Row
         try:
             with db:
                 yield db

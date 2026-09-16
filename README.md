@@ -96,11 +96,14 @@ Comfy 접수 결과가 불확실하면 자동 재접수하지 않습니다. 관�
 
 결과 파일은 인증된 Comfy 자산 메타데이터의 URL에서 내려받고 PNG로 정제해 프로젝트에 보관합니다.
 허용 호스트 기본값은 `cloud.comfy.org,storage.googleapis.com`이며 서명 URL에 API 키를 전달하지 않습니다.
-프론트에는 만료 URL 대신 보관된 그림을 data URI로 반환합니다. 그림 내용과 대체텍스트는 제작자가 대조해야 합니다.
+프론트에는 만료 URL 대신 서버가 보관한 그림의 주소(`/api/studio/assets/{id}`)를 반환합니다. 그림 내용과 대체텍스트는 제작자가 대조해야 합니다.
 
 ## 저장과 게시
 
-SQLite를 사용합니다. `DATABASE_PATH` 기본값은 `data/studio.sqlite3`입니다.
+기본은 SQLite 파일이고 `DATABASE_PATH` 기본값은 `data/studio.sqlite3`입니다. 디스크가 유지되지 않는 호스팅(Vercel)에서는
+`TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`을 넣으면 같은 SQL을 Turso(SQL over HTTP)로 보냅니다. 두 경우 모두 `/health`의 `storage`로 확인합니다.
+그림 파일은 자료 JSON이 아니라 별도 행(`studio_assets`)에 두고 인증 없는 `/api/studio/assets/{id}`로 내주며, 그 주소는
+`PUBLIC_BASE_URL`(Vercel에서는 프로젝트 주소가 기본)로 만듭니다. 배포 절차는 [Vercel + Turso 매뉴얼](docs/DEPLOY-VERCEL-TURSO.md)을 봅니다.
 작성자별 접근을 분리하고, `saveRevision` 또는 구조의 `revision`으로 동시 수정 충돌을 검사합니다.
 내용 버전과 초안의 기준 버전은 서버가 결정합니다.
 

@@ -1,5 +1,4 @@
 """Persistent Comfy image candidates behind the existing FE assist/images contract."""
-import base64
 import hashlib
 import json
 import re
@@ -17,6 +16,7 @@ from .sources import clean_image
 from .store import fail
 from .studio_domain import anchor_text, cards, require_document, timestamp
 from .studio_models import Wire
+from .studio_store import StudioStore, asset_size, asset_url
 from .video_models import WorkflowNode
 
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
@@ -46,7 +46,7 @@ def fingerprint(context):
 
 
 def capacity(state, extra=0):
-    if len(state["assets"]) >= 100 or sum(len(i["src"]) for i in state["assets"]) + extra > 12 * 1024 * 1024:
+    if len(state["assets"]) >= 100 or sum(asset_size(i) for i in state["assets"]) + extra > 12 * 1024 * 1024:
         fail(413, "image_limit", "자료의 그림 개수 또는 용량 한도를 넘었어요.")
 
 
@@ -138,9 +138,7 @@ class StudioGeneration:
                         fail(502, "image_missing_output", "Comfy 작업에 완성된 그림이 없어요. 서버의 생성 작업을 확인해 주세요.")
                     output = parsed["outputs"][0]
                     image = self.download(output.asset_id, job["provider_job_id"])
-                    asset = {"id": job["id"], "src": "data:image/png;base64," + base64.b64encode(image).decode(),
-                             "alt": job["plan"]["alt"], "meaning": job["plan"]["meaning"], "source": "library"}
-                    return self.finish(job, project_id, owner, asset)
+                    return self.finish(job, project_id, owner, image)
                 if job["status"] in {"failed", "canceled", "expired"}:
                     fail(502, "image_generation_failed", "Comfy 그림 생성이 완료되지 않았어요. 서버의 생성 작업을 확인해 주세요.")
                 if time.monotonic() >= deadline:
@@ -185,7 +183,9 @@ class StudioGeneration:
             raise ComfyFailure("comfy_download_failed") from None
         return clean_image(bytes(data))[0]
 
-    def finish(self, job, project_id, owner, asset):
+    def finish(self, job, project_id, owner, image):
+        asset = {"id": job["id"], "src": asset_url(self.config.public_base_url, job["id"]),
+                 "alt": job["plan"]["alt"], "meaning": job["plan"]["meaning"], "source": "library"}
         # Re-read in the transaction: generating a candidate must never overwrite an autosave.
         with self.store.store.connect() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -195,8 +195,9 @@ class StudioGeneration:
             state = json.loads(row["body"])
             if fingerprint(image_context(state, job["card_id"])) != job["fingerprint"]:
                 fail(409, "image_card_changed", "생성 중 카드 내용이 바뀌었어요. 현재 카드에서 다시 그림 후보를 확인해 주세요.")
-            capacity(state, len(asset["src"]))
-            state["assets"].append(asset)
+            capacity(state, len(image))
+            StudioStore.insert_asset(db, asset["id"], project_id, owner, "image/png", image)
+            state["assets"].append({**asset, "byteSize": len(image)})
             state["project"]["updatedAt"] = timestamp()
             db.execute("UPDATE studio_projects SET body=?,version=version+1,updated_at=? WHERE id=? AND owner=?",
                        (json.dumps(state), state["project"]["updatedAt"], project_id, owner))

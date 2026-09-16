@@ -178,6 +178,11 @@ def test_png_upload_and_external_asset_rejection(client):
                            data={"alt": "파란색 사각형", "meaning": "테스트용 이미지"})
     assert response.status_code == 200, response.text
     image = response.json()["image"]
+    assert image["src"] == "http://127.0.0.1:8100/api/studio/assets/" + image["id"]
+    served = client.get("/api/studio/assets/" + image["id"], headers={"Authorization": ""})
+    assert served.status_code == 200 and served.headers["content-type"].startswith("image/png")
+    assert served.content.startswith(b"\x89PNG") and "immutable" in served.headers["cache-control"]
+    assert client.get("/api/studio/assets/missing").status_code == 404
     doc["images"] = [image]
     doc["sections"][0]["cards"][0]["imageId"] = image["id"]
     response = client.put(path(project) + "/document", json=doc)
@@ -234,7 +239,8 @@ def test_safe_svg_is_supported_without_active_content(client):
     svg = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="blue"/></svg>'
     response = client.post(path(project) + "/assist/upload-image", files={"file": ("safe.svg", svg, "image/svg+xml")})
     assert response.status_code == 200, response.text
-    assert response.json()["image"]["src"].startswith("data:image/svg+xml;base64,")
+    served = client.get("/api/studio/assets/" + response.json()["image"]["id"])
+    assert served.headers["content-type"].startswith("image/svg+xml") and b"<svg" in served.content
     for unsafe in [b'<svg><script>alert(1)</script></svg>', b'<svg><image href="https://example.com"/></svg>',
                    b'<!DOCTYPE svg [<!ENTITY e SYSTEM "file:///etc/passwd">]><svg>&e;</svg>',
                    b'<svg><rect fill="url(https://example.com)"/></svg>']:

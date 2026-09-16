@@ -17,10 +17,18 @@ class Config:
     comfy_api_key: str = field(default_factory=lambda: os.getenv("COMFY_CLOUD_API_KEY", ""), repr=False)
     comfy_asset_allowed_hosts: list[str] = field(default_factory=lambda: os.getenv("COMFY_ASSET_ALLOWED_HOSTS", "cloud.comfy.org,storage.googleapis.com").split(","))
     font_path: str | None = field(default_factory=lambda: os.getenv("PDF_FONT_PATH"))
+    # Remote store for hosts without a persistent disk (Vercel). Empty means the SQLite file at db_path.
+    turso_url: str = field(default_factory=lambda: os.getenv("TURSO_DATABASE_URL", "").strip())
+    turso_token: str = field(default_factory=lambda: os.getenv("TURSO_AUTH_TOKEN", "").strip(), repr=False)
+    # Where pictures are served from; stored inside image URLs, so set it before creating data.
+    public_base_url: str = field(default_factory=lambda: os.getenv("PUBLIC_BASE_URL") or (
+        "https://" + os.environ["VERCEL_PROJECT_PRODUCTION_URL"] if os.getenv("VERCEL_PROJECT_PRODUCTION_URL")
+        else "http://127.0.0.1:8100"))
     cors_origins: list[str] = field(default_factory=lambda: os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(","))
     environment: str = field(default_factory=lambda: os.getenv("APP_ENV", "development"))
 
     def __post_init__(self):
+        self.public_base_url = self.public_base_url.strip().rstrip("/")
         if self.provider not in {"demo", "openai"}:
             raise ValueError("AI_PROVIDER must be demo or openai")
         if self.provider == "openai":

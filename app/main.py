@@ -54,7 +54,7 @@ class UploadLimitMiddleware:
 
 def create_app(config: Config | None = None):
     config = config or Config()
-    store, provider = Store(config.db_path), Provider(config)
+    store, provider = Store(config.db_path, config.turso_url, config.turso_token), Provider(config)
     api = FastAPI(title="이해로 스튜디오 API", version="0.3.0", description=API_DESCRIPTION,
         swagger_ui_parameters={"filter": True, "displayRequestDuration": True}, responses={
         401: {"model": ErrorResponse}, 404: {"model": ErrorResponse},
@@ -72,6 +72,8 @@ def create_app(config: Config | None = None):
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
+        if request.url.path.startswith("/api/studio/assets/"):
+            return response  # pictures are immutable and set their own caching
         response.headers["Cache-Control"] = "no-store"
         if request.url.path.startswith("/api/studio/reader/"):
             response.headers["Content-Security-Policy"] = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'"
@@ -92,7 +94,7 @@ def create_app(config: Config | None = None):
 
     @api.get("/health", include_in_schema=False)
     def health() -> dict[str, str]:
-        return {"status": "ok", "ai_provider": config.provider, "environment": config.environment}
+        return {"status": "ok", "ai_provider": config.provider, "environment": config.environment, "storage": store.kind}
 
     register_studio(api, config, store, provider, owner)
     install_docs(api)

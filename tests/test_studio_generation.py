@@ -1,4 +1,3 @@
-import base64
 import io
 import json
 
@@ -81,7 +80,9 @@ def test_generates_caches_persists_and_saves_fe_image(setup):
     assert result.status_code == 200, result.text
     image = result.json()["candidates"][0]
     assert set(image) == {"src", "alt", "meaning"}
-    assert base64.b64decode(image["src"].split(",")[1]).startswith(b"\x89PNG")
+    assert image["src"].startswith("http://127.0.0.1:8100/api/studio/assets/")
+    served = client.get(image["src"].split("http://127.0.0.1:8100", 1)[1], headers={"Authorization": ""})
+    assert served.status_code == 200 and served.content.startswith(b"\x89PNG")
     assert "private" not in result.text and "signed=" not in result.text
     assert client.get(path(project) + "/document").json() == document  # No implicit attachment or approval.
     assert request_image(setup).json() == result.json()
