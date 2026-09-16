@@ -17,7 +17,7 @@ from .store import fail
 from .studio_domain import anchor_text, cards, require_document, timestamp
 from .studio_models import Wire
 from .studio_characters import character_context, reference_bytes
-from .studio_identity import CharacterIdentity, identity_instructions, check_faces
+from .studio_identity import CharacterIdentity, identity_instructions
 from .studio_store import StudioStore, asset_size, asset_url
 from .video_models import WorkflowNode
 
@@ -113,7 +113,7 @@ class StudioGeneration:
         try:
             if job["status"] == "identity_rejected":
                 if job.get("identity_attempt", 0) >= 1:
-                    fail(502, "image_identity_unresolved", "보정 후에도 얼굴 구도 또는 인물 외형이 맞지 않아 후보에서 제외했어요. 기준 그림이나 장면 설명을 수정해 주세요. 추가 자동 생성은 하지 않아요.")
+                    fail(502, "image_identity_unresolved", "보정 후에도 인물 외형이 기준과 달라 후보에서 제외했어요. 기준 그림이나 장면 설명을 수정해 주세요. 추가 자동 생성은 하지 않아요.")
                 # A fresh caller retry authorizes one bounded correction, never an endless regeneration loop.
                 job.update(status="planned", identity_attempt=1, correction=job["identity_check"]["correction"],
                            seed=secrets.randbits(48))
@@ -185,9 +185,8 @@ class StudioGeneration:
                         "envelopes, receipts, documents, keys or any other object. No completed refund or agreement. "
                         "A separate court-decision symbol may establish context; preserve the parties' distinct roles."})
                 if references:
-                    plan = plan.model_copy(update={"prompt": plan.prompt + identity_instructions(job["identity_profiles"])})
-                if job.get("correction"):
-                    plan = plan.model_copy(update={"prompt": plan.prompt + "\nRequired correction: " + job["correction"]})
+                    plan = plan.model_copy(update={"prompt": plan.prompt + identity_instructions(job["identity_profiles"]) +
+                        ("\nCorrect the previous attempt's mismatches: " + job["correction"] if job.get("correction") else "")})
                 graph = (compile_reference_image(plan, job["seed"], "ihaero-" + job["id"], filenames) if references
                          else compile_image(plan, job["seed"], "ihaero-" + job["id"]))
                 check = self.cloud.preflight(graph, allowed=REFERENCE_ALLOWED if references else ALLOWED,
@@ -226,24 +225,24 @@ class StudioGeneration:
                         fail(502, "image_missing_output", "Comfy 작업에 완성된 그림이 없어요. 서버의 생성 작업을 확인해 주세요.")
                     output = parsed["outputs"][0]
                     image = self.download(output.asset_id, job["provider_job_id"])
-                    digest = hashlib.sha256(image).hexdigest()
-                    check = job.get("identity_check")
-                    if not check or check.get("digest") != digest:
-                        check = (CharacterIdentity(self.store, self.provider).check(job["identity_profiles"], image, context)
-                                 if references else check_faces(self.provider, image, context["role"] == "person")).model_dump()
-                        check["digest"] = digest
-                        job["identity_check"] = check
-                        self.persist(job)
-                    if not check["consistent"] or check["issues"]:
-                        job.setdefault("rejected_attempts", []).append({"provider_job_id": job["provider_job_id"],
-                            "attempt": job.get("identity_attempt", 0), "check": check})
-                        job["status"] = "identity_rejected"
-                        self.persist(job)
-                        code = "image_identity_unresolved" if job.get("identity_attempt", 0) else "image_identity_mismatch"
-                        fail(502, code, "얼굴이 보이지 않거나 인물 외형이 기준과 달라 후보에서 제외했어요. " +
-                             ("기준 그림이나 장면 설명을 수정해 주세요. 추가 자동 생성은 하지 않아요." if job.get("identity_attempt", 0)
-                              else "다시 시도하면 한 번만 보정 생성해요."))
-                    job["plan"]["alt"] = check["alt"]
+                    if references:
+                        digest = hashlib.sha256(image).hexdigest()
+                        check = job.get("identity_check")
+                        if not check or check.get("digest") != digest:
+                            check = CharacterIdentity(self.store, self.provider).check(job["identity_profiles"], image, context).model_dump()
+                            check["digest"] = digest
+                            job["identity_check"] = check
+                            self.persist(job)
+                        if not check["consistent"] or check["issues"]:
+                            job.setdefault("rejected_attempts", []).append({"provider_job_id": job["provider_job_id"],
+                                "attempt": job.get("identity_attempt", 0), "check": check})
+                            job["status"] = "identity_rejected"
+                            self.persist(job)
+                            code = "image_identity_unresolved" if job.get("identity_attempt", 0) else "image_identity_mismatch"
+                            fail(502, code, "인물의 얼굴·수염·옷이 기준 그림과 달라 후보에서 제외했어요. " +
+                                 ("기준 그림이나 장면 설명을 수정해 주세요. 추가 자동 생성은 하지 않아요." if job.get("identity_attempt", 0)
+                                  else "다시 시도하면 한 번만 보정 생성해요."))
+                        job["plan"]["alt"] = check["alt"]
                     return self.finish(job, project_id, owner, image)
                 if job["status"] in {"failed", "canceled", "expired"}:
                     fail(502, "image_generation_failed", "Comfy 그림 생성이 완료되지 않았어요. 서버의 생성 작업을 확인해 주세요.")
