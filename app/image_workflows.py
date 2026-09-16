@@ -9,7 +9,7 @@ from .video_workflows import validate_graph
 ALLOWED = {"UNETLoader", "DualCLIPLoader", "VAELoader", "CLIPTextEncodeFlux", "ConditioningZeroOut",
            "EmptySD3LatentImage", "KSampler", "VAEDecode", "SaveImage"}
 PRESET = "flux-schnell-illustration-v2"
-REFERENCE_PRESET = "flux2-klein-character-reference-v3"
+REFERENCE_PRESET = "flux2-klein-9b-verified-identity-v3"
 VISIBLE_FACES = (
     " If people are depicted, show each person's clearly visible face from the front or a three-quarter front view. "
     "Keep eyes, nose and mouth visible and unobstructed, with the whole head inside the frame. "
@@ -46,11 +46,11 @@ def compile_image(illustration, seed, prefix):
 
 
 def compile_reference_image(illustration, seed, prefix, references):
-    """Bounded multi-image variant of Comfy-Org's Klein 4B distilled edit template.
+    """Bounded multi-image variant of Comfy-Org's Klein 9B distilled edit template.
 
     Each reference is an uploaded Cloud filename, in the same order as imageNumber in
     the scene-planning context. Positive and negative reference chains match the
-    official image_flux2_klein_image_edit_4b_distilled.json workflow.
+    official image_flux2_klein_image_edit_9b_distilled.json workflow.
     """
     if not 1 <= len(references) <= 6:
         raise ValueError("Expected one to six character references")
@@ -67,8 +67,8 @@ def compile_reference_image(illustration, seed, prefix, references):
               "shoes and body proportions. Do not remove facial hair, make an adult younger, change outfits, "
               "swap faces, or replace anyone with a generic new character. Change only their pose and scene." + VISIBLE_FACES)
     graph = {
-        "1": node("UNETLoader", unet_name="flux-2-klein-4b-fp8.safetensors", weight_dtype="default"),
-        "2": node("CLIPLoader", clip_name="qwen_3_4b.safetensors", type="flux2", device="default"),
+        "1": node("UNETLoader", unet_name="flux-2-klein-9b.safetensors", weight_dtype="default"),
+        "2": node("CLIPLoader", clip_name="qwen_3_8b_fp8mixed.safetensors", type="flux2", device="default"),
         "3": node("VAELoader", vae_name="flux2-vae.safetensors"),
         "4": node("CLIPTextEncode", clip=["2", 0], text=prompt),
         "5": node("ConditioningZeroOut", conditioning=["4", 0]),

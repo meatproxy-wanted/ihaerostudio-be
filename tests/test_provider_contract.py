@@ -1,5 +1,6 @@
 """Preserve provider transport coverage using the current frontend API."""
 import json
+import base64
 
 import httpx
 import pytest
@@ -10,6 +11,26 @@ from app.providers import strict_schema
 from app.studio_api import SAMPLE_TEXT
 from app.studio_domain import anchor_text
 from test_studio import BASE, SETTINGS, client, create, draft, path
+
+
+def test_visual_identity_transport_uses_ordered_inline_images(monkeypatch):
+    from app.providers import Provider
+    from app.studio_identity import IdentityCheck
+    config = Config(provider="openai", openai_api_key="test-key", openai_model="test-model")
+    images = [b"\x89PNG\r\n\x1a\nreference", b"\x89PNG\r\n\x1a\ncandidate"]
+    def post(self, url, **kwargs):
+        body = kwargs["json"]
+        content = body["input"][1]["content"]
+        assert content[0] == {"type": "input_text", "text": '{"referenceCount": 1}'}
+        assert [base64.b64decode(p["image_url"].split(",", 1)[1]) for p in content[1:]] == images
+        assert all(p["type"] == "input_image" and p["detail"] == "high" for p in content[1:])
+        assert body["store"] is False
+        result = {"consistent": False, "issues": ["수염 추가"], "correction": "Remove beard.", "alt": "두 사람"}
+        return httpx.Response(200, request=httpx.Request("POST", url), json={"status": "completed", "output": [
+            {"type": "message", "content": [{"type": "output_text", "text": json.dumps(result)}]}]})
+    monkeypatch.setattr(httpx.Client, "post", post)
+    result = Provider(config).call("Compare images", {"referenceCount": 1}, IdentityCheck, images=images)
+    assert not result.consistent
 
 
 @pytest.mark.parametrize("model", [wire.StructureContent, wire.DraftContent, wire.AiStructureContent,

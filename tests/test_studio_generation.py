@@ -17,7 +17,21 @@ class PromptProvider:
     name = "openai"
     calls = 0
 
-    def call(self, task, context, schema):
+    def call(self, task, context, schema, *, images=()):
+        if schema.__name__ == "CharacterAppearance":
+            self.profile_calls = getattr(self, "profile_calls", 0) + 1
+            assert len(images) == 1 and images[0].startswith(b"\x89PNG")
+            return schema(personCount=1, faceVisible=True, face="oval face", hair="short brown hair",
+                facialHair="none", facialHairDescription="clean-shaven", upperClothing="gray shirt",
+                lowerClothing="brown trousers", shoes="black sneakers", accessories="none", style="flat illustration")
+        if schema.__name__ == "SceneIdentity":
+            self.check_calls = getattr(self, "check_calls", 0) + 1
+            assert len(images) == 1
+            ok = getattr(self, "identity_ok", True)
+            return schema(characters=[{"referenceImageNumber": p["imageNumber"], "faceVisible": True,
+                "facialHair": "none" if ok else "beard", "faceAndHairMatch": True,
+                "upperClothingMatch": True, "lowerClothingMatch": True, "shoesMatch": True, "differences": []} for p in context["appearances"]],
+                alt="실제 생성 결과를 확인한 설명")
         self.calls += 1
         self.context, self.task = context, task
         return schema(prompt="An anonymous adult judge explaining an order; no completed payment.",
@@ -227,7 +241,7 @@ def test_saved_portraits_are_uploaded_and_condition_the_same_scene(setup):
     assert len(uploads) == 2
     assert all(b"\x89PNG" in r.content and r.headers["X-API-Key"] == "private-comfy-test-key" for r in uploads)
     graph = json.loads(submissions(control)[0].content)["workflow"]
-    assert graph["1"]["inputs"]["unet_name"] == "flux-2-klein-4b-fp8.safetensors"
+    assert graph["1"]["inputs"]["unet_name"] == "flux-2-klein-9b.safetensors"
     assert [n["inputs"]["image"] for n in graph.values() if n["class_type"] == "LoadImage"] == [f"{n:064x}.png" for n in [1, 2]]
     assert len([n for n in graph.values() if n["class_type"] == "ReferenceLatent"]) == 4
     assert request_image(setup).json() == result.json()
@@ -238,6 +252,7 @@ def test_saved_portraits_are_uploaded_and_condition_the_same_scene(setup):
     assert client.put(path(project) + "/document", json=latest).status_code == 200
     assert request_image(setup).status_code == 200
     assert len(submissions(control)) == 2
+    assert service.provider.profile_calls == 2  # Saved image profiles survive a scene edit.
 
 
 def test_replaced_portrait_during_generation_rejects_stale_scene(setup):
@@ -379,3 +394,75 @@ def test_decision_workflow_keeps_order_separate_from_completed_payment(setup):
     graph = json.loads(submissions(control)[0].content)["workflow"]
     prompt = graph["4"]["inputs"]["clip_l"]
     assert "Mandatory court-decision scene constraint" in prompt and "Keep their hands apart" in prompt
+
+
+def test_inconsistent_candidate_is_hidden_and_one_correction_is_allowed(setup):
+    client, service, project, _, _, control = setup
+    attach_characters(setup)
+    service.provider.identity_ok = False
+    response = request_image(setup)
+    assert response.status_code == 502 and response.json()["detail"]["code"] == "image_identity_mismatch"
+    assert "candidates" not in response.json()
+    assert len(service.store.get(project["id"], "alice")[0]["assets"]) == 2  # no inconsistent candidate stored
+    service.provider.identity_ok = True
+    result = request_image(setup)
+    assert result.status_code == 200, result.text
+    assert result.json()["candidates"][0]["alt"] == "실제 생성 결과를 확인한 설명"
+    assert service.provider.profile_calls == 2 and service.provider.calls == 1
+    assert len(submissions(control)) == 2
+    first, corrected = submissions(control)
+    assert corrected.headers["Idempotency-Key"] == first.headers["Idempotency-Key"] + "-identity-1"
+    graph = json.loads(corrected.content)["workflow"]
+    text = graph["4"]["inputs"]["text"]
+    assert "clean-shaven" in text.lower() and "gray shirt" in text and "Restore each character" in text
+    assert request_image(setup).json() == result.json()
+    assert len(submissions(control)) == 2
+
+
+def test_inconsistent_correction_stops_without_third_paid_job(setup):
+    _, service, _, _, _, control = setup
+    attach_characters(setup)
+    service.provider.identity_ok = False
+    assert request_image(setup).json()["detail"]["code"] == "image_identity_mismatch"
+    assert request_image(setup).json()["detail"]["code"] == "image_identity_unresolved"
+    assert request_image(setup).json()["detail"]["code"] == "image_identity_unresolved"
+    assert len(submissions(control)) == 2 and service.provider.check_calls == 2
+
+
+def test_uncertain_correction_is_not_resubmitted(setup):
+    _, service, _, _, _, control = setup
+    attach_characters(setup)
+    service.provider.identity_ok = False
+    assert request_image(setup).json()["detail"]["code"] == "image_identity_mismatch"
+    control["submit_error"] = "timeout"
+    assert request_image(setup).status_code == 503
+    assert request_image(setup).json()["detail"]["code"] == "image_submission_unknown"
+    assert len(submissions(control)) == 2
+
+
+def test_identity_check_failure_resumes_same_paid_job(setup):
+    _, service, _, _, _, control = setup
+    attach_characters(setup)
+    original = service.provider.call
+    def fail_check(task, payload, schema, **kwargs):
+        if schema.__name__ == "SceneIdentity":
+            raise HTTPException(504, {"code": "ai_timeout", "message": "test"})
+        return original(task, payload, schema, **kwargs)
+    service.provider.call = fail_check
+    assert request_image(setup).status_code == 504
+    service.provider.call = original
+    assert request_image(setup).status_code == 200
+    assert len(submissions(control)) == 1 and service.provider.profile_calls == 2
+
+
+def test_hidden_face_reference_is_rejected_before_comfy_submission(setup):
+    _, service, _, _, _, control = setup
+    attach_characters(setup)
+    original = service.provider.call
+    def hidden_face(task, payload, schema, **kwargs):
+        result = original(task, payload, schema, **kwargs)
+        return result.model_copy(update={"faceVisible": False}) if schema.__name__ == "CharacterAppearance" else result
+    service.provider.call = hidden_face
+    response = request_image(setup)
+    assert response.status_code == 422 and response.json()["detail"]["code"] == "character_reference_unclear"
+    assert not submissions(control) and service.provider.calls == 0
