@@ -13,7 +13,7 @@ ALLOWED = {"UNETLoader", "CLIPLoader", "VAELoader", "CLIPTextEncode", "FluxGuida
            "SamplerCustomAdvanced", "VAEDecode", "SaveImage"}
 PRESET = "flux2-dev-illustration-v1"
 REFERENCE_PRESET = "qwen-image-edit-2511-identity-v1"
-PORTRAIT_PRESET = "qwen-image-2512-solo-portrait-v1"
+PORTRAIT_PRESET = "qwen-image-2512-solo-portrait-20steps-v2"
 PORTRAIT_ALLOWED = {"UNETLoader", "CLIPLoader", "VAELoader", "CLIPTextEncode", "ModelSamplingAuraFlow",
                     "EmptySD3LatentImage", "KSampler", "VAEDecode", "SaveImage"}
 PORTRAIT_COMPOSITION = (
@@ -58,7 +58,7 @@ def compile_portrait(illustration, seed, prefix):
         "5": node("CLIPTextEncode", clip=["2", 0], text=negative),
         "6": node("EmptySD3LatentImage", width=1328, height=1328, batch_size=1),
         "10": node("ModelSamplingAuraFlow", model=["1", 0], shift=3.1),
-        "7": node("KSampler", model=["10", 0], positive=["4", 0], negative=["5", 0], latent_image=["6", 0], seed=seed, steps=50, cfg=4.0, sampler_name="euler", scheduler="simple", denoise=1.0),
+        "7": node("KSampler", model=["10", 0], positive=["4", 0], negative=["5", 0], latent_image=["6", 0], seed=seed, steps=20, cfg=4.0, sampler_name="euler", scheduler="simple", denoise=1.0),
         "8": node("VAEDecode", samples=["7", 0], vae=["3", 0]),
         "9": node("SaveImage", images=["8", 0], filename_prefix=prefix),
     }

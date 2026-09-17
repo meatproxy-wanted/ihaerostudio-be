@@ -41,6 +41,7 @@ class PromptProvider:
                 alt="실제 생성 결과를 확인한 설명")
         self.calls += 1
         self.context, self.task = context, task
+        self.plans = getattr(self, "plans", []) + [copy.deepcopy(context)]
         return schema(prompt="An anonymous adult judge explaining an order; no completed payment.",
                       alt="판사가 명령을 설명하는 모습", meaning="돈을 돌려주라는 법원의 결정")
 
@@ -284,10 +285,16 @@ def test_portrait_generation_does_not_copy_other_characters(setup):
     graph = json.loads(submissions(control)[0].content)["workflow"]
     assert graph["1"]["inputs"]["unet_name"] == "qwen_image_2512_fp8_e4m3fn.safetensors"
     assert graph["6"]["inputs"] == {"width": 1328, "height": 1328, "batch_size": 1}
-    assert graph["7"]["inputs"]["steps"] == 50
+    assert graph["7"]["inputs"]["steps"] == 20
     assert response.status_code == 200, response.text
     assert service.provider.context["characterReferences"] == []
     assert [c["partyId"] for c in service.provider.context["characters"]] == [portraits[0]["partyId"]]
+    contrasts = service.provider.context["existingCharacterAppearances"]
+    assert [p["partyId"] for p in contrasts] == [portraits[1]["partyId"]]
+    assert contrasts[0]["hair"] == "short brown hair" and contrasts[0]["upperClothing"] == "gray shirt"
+    assert "imageNumber" not in contrasts[0]
+    assert "적어도 두 가지" in service.provider.task
+    assert service.provider.profile_calls == 1
     assert not [r for r in control["calls"] if r.url.path == "/api/upload/image"]
     latest = client.get(path(project) + "/document").json()
     latest["images"].append({"id": "selected-new-portrait", **response.json()["candidates"][0], "source": "library"})
@@ -296,6 +303,7 @@ def test_portrait_generation_does_not_copy_other_characters(setup):
     assert client.post(path(project) + "/assist/images", json={"cardId": portraits[0]["id"]}).json() == response.json()
     assert len(submissions(control)) == 1
     assert service.provider.portrait_validation_calls == 1
+    assert service.provider.profile_calls == 1
 
 
 def test_reference_must_belong_to_the_same_project_and_owner(setup):

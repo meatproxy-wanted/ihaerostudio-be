@@ -10,6 +10,15 @@ from .studio_domain import anchor_text, cards
 MAX_REFERENCES = 6
 
 
+def other_portrait_references(state, party_id):
+    """Other applied portraits are contrast data, not image-edit references."""
+    document = {**state["document"], "partyNames": [n for n in state["document"]["partyNames"]
+                                                    if n["partyId"] != party_id]}
+    _, references = character_context({**state, "document": document},
+                                      {"role": "background", "partyId": None, "sentences": []}, select_relevant=False)
+    return references
+
+
 def character_context(state, target, *, select_relevant=True):
     document = state["document"]
     parties = {p["id"]: p for p in state["structure"]["parties"]}

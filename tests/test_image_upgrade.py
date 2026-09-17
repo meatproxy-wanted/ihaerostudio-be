@@ -43,13 +43,14 @@ def test_initial_portrait_uses_qwen_and_new_cache_key():
     assert graph["2"].inputs == {"clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors", "type": "qwen_image", "device": "default"}
     assert graph["3"].inputs["vae_name"] == "qwen_image_vae.safetensors"
     assert graph["6"].inputs == {"width": 1328, "height": 1328, "batch_size": 1}
-    assert graph["7"].inputs["steps"] == 50
+    assert graph["7"].inputs["steps"] == 20
     assert graph["7"].inputs["cfg"] == 4.0
     assert graph["7"].inputs["model"] == ["10", 0]
     assert graph["10"].inputs == {"model": ["1", 0], "shift": 3.1}
     assert graph["7"].inputs["seed"] == 42
     context = {"role": "person", "characterReferences": []}
-    assert PORTRAIT_PRESET == "qwen-image-2512-solo-portrait-v1"
+    assert PORTRAIT_PRESET == "qwen-image-2512-solo-portrait-20steps-v2"
+    assert fingerprint(context) != fingerprint(context, "qwen-image-2512-solo-portrait-v1")
     assert fingerprint(context) != fingerprint(context, "flux-schnell-illustration-v2")
 
 
@@ -204,23 +205,27 @@ def test_qwen_upgrade_preserves_existing_dev_reference_submissions(setup, monkey
         "qwen_image_edit_2511_fp8mixed.safetensors" if status == "ready" else "flux2_dev_fp8mixed.safetensors")
 
 
-@pytest.mark.parametrize("status", ["running", "submission_unknown", "ready"])
-def test_qwen_portrait_upgrade_preserves_paid_schnell_jobs_not_ready_cache(setup, monkeypatch, status):
+@pytest.mark.parametrize("status", ["running", "submission_unknown", "ready", "prepared"])
+@pytest.mark.parametrize("old_preset,old_model,old_steps", [
+    ("flux-schnell-illustration-v2", "flux1-schnell.safetensors", 4),
+    ("qwen-image-2512-solo-portrait-v1", "qwen_image_2512_fp8_e4m3fn.safetensors", 50)])
+def test_qwen_portrait_upgrade_preserves_paid_jobs_not_ready_cache(setup, monkeypatch, status, old_preset, old_model, old_steps):
     client, service, project, _, _, control = setup
     portrait = attach_characters(setup)[0]
     monkeypatch.setattr("app.studio_generation.WAIT_SECONDS", 0)
     control["status"] = "running" if status == "running" else "succeeded"
-    control["submit_error"] = "timeout" if status == "submission_unknown" else None
+    control["submit_error"] = "timeout" if status == "submission_unknown" else 429 if status == "prepared" else None
     def request():
         return client.post(f"/api/studio/projects/{project['id']}/assist/images", json={"cardId": portrait["id"]})
     assert request().status_code == (200 if status == "ready" else 503)
     context = image_context(service.store.get(project["id"], "alice")[0], portrait["id"])
-    old_digest = fingerprint(context, "flux-schnell-illustration-v2")
+    old_digest = fingerprint(context, old_preset)
     with service.store.store.connect() as db:
         row = db.execute("SELECT * FROM studio_image_jobs").fetchone()
         job = json.loads(row["body"])
         job["fingerprint"] = old_digest
-        job["workflow"]["1"]["inputs"]["unet_name"] = "flux1-schnell.safetensors"
+        job["workflow"]["1"]["inputs"]["unet_name"] = old_model
+        job["workflow"]["7"]["inputs"]["steps"] = old_steps
         job.pop("portrait_composition", None)
         original_id = job["id"]
         db.execute("UPDATE studio_image_jobs SET fingerprint=?,body=?,lease_until=0 WHERE id=?",
@@ -233,10 +238,11 @@ def test_qwen_portrait_upgrade_preserves_paid_schnell_jobs_not_ready_cache(setup
     else:
         assert response.status_code == 200, response.text
         assert service.provider.portrait_validation_calls == (2 if status == "ready" else 1)
-    assert len(submissions(control)) == (2 if status == "ready" else 1)
+    assert len(submissions(control)) == (2 if status in {"ready", "prepared"} else 1)
     with service.store.store.connect() as db:
         rows = db.execute("SELECT body FROM studio_image_jobs").fetchall()
         current = next(json.loads(r["body"]) for r in rows if json.loads(r["body"])["fingerprint"] == fingerprint(context))
     assert (current["id"] == original_id) == (status != "ready")
     assert current["workflow"]["1"]["inputs"]["unet_name"] == (
-        "qwen_image_2512_fp8_e4m3fn.safetensors" if status == "ready" else "flux1-schnell.safetensors")
+        "qwen_image_2512_fp8_e4m3fn.safetensors" if status in {"ready", "prepared"} else old_model)
+    assert current["workflow"]["7"]["inputs"]["steps"] == (20 if status in {"ready", "prepared"} else old_steps)
