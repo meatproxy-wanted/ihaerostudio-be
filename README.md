@@ -86,12 +86,13 @@ uvicorn app.main:app --host 127.0.0.1 --port 8100 --no-access-log
 
 FE에서 **카드 → 그림 넣기 → 그림 후보 보기 → 후보 선택 → 이 그림으로 바꾸기**를 사용합니다.
 OpenAI가 선택한 카드의 문장과 근거로 영문 장면 설명·한국어 대체텍스트 초안을 만들고,
-Comfy Cloud v2가 **FLUX.2 Dev (FP8), 1024×1024, 20 steps**로 그림 1장을 생성합니다.
-등장인물 초상과 일반 장면 모두 같은 상위 모델을 사용합니다. 등장인물 그림을 **적용·저장한 뒤**
+등장인물 초상(`role=person`)은 기존 **FLUX Schnell, 768×768, 4 steps**를 유지합니다.
+일반 장면은 **FLUX.2 Dev (FP8), 1024×1024, 20 steps**로 그림 1장을 생성합니다.
+등장인물 그림을 **적용·저장한 뒤**
 결론·사건 설명 그림을 요청하면 FLUX.2 Dev가 그 그림들을 실제 레퍼런스로 사용합니다.
 기존 4-step 모델보다 생성 시간·GPU 사용량이 늘어날 수 있습니다. 90초 대기 후 진행 중이면
 같은 요청으로 이어서 조회하며, 업그레이드 전에 접수한 작업은 저장된 기존 워크플로우로 끝까지 확인합니다.
-이미 완료된 구형 모델 후보는 보관하고 다음 신규 후보 요청부터 새 모델을 사용합니다.
+이미 완료된 그림은 보관하며, 등장인물 초상의 기존 Schnell 후보도 재사용합니다.
 실행 전 Cloud 모델·노드 가용성을 확인하며 지원되지 않으면 `comfy_workflow_unavailable`을 반환합니다.
 사용 모델은 `flux2_dev_fp8mixed.safetensors`, `mistral_3_small_flux2_bf16.safetensors`,
 `full_encoder_small_decoder.safetensors`입니다.

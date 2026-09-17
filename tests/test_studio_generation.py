@@ -272,6 +272,10 @@ def test_portrait_generation_does_not_copy_other_characters(setup):
     client, service, project, _, _, control = setup
     portraits = attach_characters(setup)
     response = client.post(path(project) + "/assist/images", json={"cardId": portraits[0]["id"]})
+    graph = json.loads(submissions(control)[0].content)["workflow"]
+    assert graph["1"]["inputs"]["unet_name"] == "flux1-schnell.safetensors"
+    assert graph["6"]["inputs"] == {"width": 768, "height": 768, "batch_size": 1}
+    assert graph["7"]["inputs"]["steps"] == 4
     assert response.status_code == 200, response.text
     assert service.provider.context["characterReferences"] == []
     assert [c["partyId"] for c in service.provider.context["characters"]] == [portraits[0]["partyId"]]

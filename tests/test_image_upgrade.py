@@ -2,7 +2,8 @@ import json
 
 import pytest
 
-from app.image_workflows import ALLOWED, REFERENCE_ALLOWED, compile_image, compile_reference_image
+from app.image_workflows import (ALLOWED, PORTRAIT_ALLOWED, PORTRAIT_PRESET, REFERENCE_ALLOWED,
+                                 compile_image, compile_portrait, compile_reference_image)
 from app.studio_generation import IllustrationPlan, fingerprint, image_context
 from app.video_workflows import validate_graph
 from test_studio_generation import client, setup, request_image, submissions
@@ -25,6 +26,19 @@ def test_dev_workflows_use_guidance_and_ordered_reference_chain():
     assert refs["10"].inputs["conditioning"] == ["27", 0]
     assert [refs[k].inputs["image"] for k in ["20", "24"]] == ["first.png", "second.png"]
     assert not any(n.class_type in {"CFGGuider", "ConditioningZeroOut", "LoraLoaderModelOnly"} for n in refs.values())
+
+
+def test_initial_portrait_retains_original_model_and_cache_key():
+    plan = IllustrationPlan(prompt="An anonymous adult facing the viewer.", alt="인물", meaning="등장인물")
+    graph = compile_portrait(plan, 42, "test")
+    validate_graph(graph, PORTRAIT_ALLOWED)
+    assert graph["1"].inputs["unet_name"] == "flux1-schnell.safetensors"
+    assert graph["6"].inputs == {"width": 768, "height": 768, "batch_size": 1}
+    assert graph["7"].inputs["steps"] == 4
+    assert graph["7"].inputs["seed"] == 42
+    context = {"role": "person", "characterReferences": []}
+    assert PORTRAIT_PRESET == "flux-schnell-illustration-v2"
+    assert fingerprint(context) == fingerprint(context, "flux-schnell-illustration-v2")
 
 
 @pytest.mark.parametrize("status", ["running", "submission_unknown", "ready"])

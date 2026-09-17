@@ -10,7 +10,8 @@ import httpx
 from pydantic import Field
 
 from .comfy import ComfyCloud, ComfyFailure, ORIGIN
-from .image_workflows import ALLOWED, PRESET, REFERENCE_ALLOWED, REFERENCE_PRESET, compile_image, compile_reference_image
+from .image_workflows import (ALLOWED, PRESET, PORTRAIT_ALLOWED, PORTRAIT_PRESET, REFERENCE_ALLOWED,
+                              REFERENCE_PRESET, compile_image, compile_portrait, compile_reference_image)
 from .models import uid
 from .sources import clean_image
 from .store import fail
@@ -46,7 +47,8 @@ def image_context(state, card_id):
 
 
 def fingerprint(context, preset=None):
-    preset = preset or (REFERENCE_PRESET if context.get("characterReferences") else PRESET)
+    preset = preset or (PORTRAIT_PRESET if context["role"] == "person" else
+                        REFERENCE_PRESET if context.get("characterReferences") else PRESET)
     payload = ["character-context-v1", preset, context]
     if context["role"] != "person":
         payload.append("detailed-situation-no-text-v1")
@@ -121,7 +123,8 @@ class StudioGeneration:
         # Validate every selected reference before spending money on scene planning or generation.
         references = context["characterReferences"]
         pixels = [reference_bytes(self.store, state, owner, ref) for ref in references]
-        legacy_preset = "flux2-klein-9b-verified-identity-v3" if references else "flux-schnell-illustration-v2"
+        legacy_preset = ("flux2-dev-illustration-v1" if context["role"] == "person" else
+                         "flux2-klein-9b-verified-identity-v3" if references else "flux-schnell-illustration-v2")
         job = self.claim(project_id, owner, card_id, fingerprint(context), fingerprint(context, legacy_preset))
         if job["status"] == "ready":
             state = self.store.get(project_id, owner)[0]
@@ -218,10 +221,16 @@ class StudioGeneration:
                 if references:
                     plan = plan.model_copy(update={"prompt": plan.prompt + identity_instructions(job["identity_profiles"]) +
                         ("\nCorrect the previous attempt's mismatches: " + job["correction"] if job.get("correction") else "")})
-                graph = (compile_reference_image(plan, job["seed"], "ihaero-" + job["id"], filenames) if references
-                         else compile_image(plan, job["seed"], "ihaero-" + job["id"]))
-                check = self.cloud.preflight(graph, allowed=REFERENCE_ALLOWED if references else ALLOWED,
-                                             preset=REFERENCE_PRESET if references else PRESET, uploaded_images=filenames)
+                if context["role"] == "person":
+                    graph = compile_portrait(plan, job["seed"], "ihaero-" + job["id"])
+                    allowed, preset = PORTRAIT_ALLOWED, PORTRAIT_PRESET
+                elif references:
+                    graph = compile_reference_image(plan, job["seed"], "ihaero-" + job["id"], filenames)
+                    allowed, preset = REFERENCE_ALLOWED, REFERENCE_PRESET
+                else:
+                    graph = compile_image(plan, job["seed"], "ihaero-" + job["id"])
+                    allowed, preset = ALLOWED, PRESET
+                check = self.cloud.preflight(graph, allowed=allowed, preset=preset, uploaded_images=filenames)
                 if not check.compatible:
                     fail(503, "comfy_workflow_unavailable", "Comfy에서 그림 생성 모델을 사용할 수 없어요. 서버 워크플로 설정을 확인해 주세요.")
                 job.update(status="prepared", prepared_at=time.time(), workflow={k: n.model_dump() for k, n in graph.items()})
