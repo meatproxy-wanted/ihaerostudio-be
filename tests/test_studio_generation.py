@@ -507,8 +507,29 @@ def test_scene_staging_reaches_both_renderers_without_extra_ai_calls(setup, with
     assert service.provider.calls == 1 and len(submissions(control)) == 1
     if with_references:
         assert "The reference backgrounds and poses are not scene requirements" in prompt
-        assert "re-use the exact illustrated adults" in prompt
-        assert graph["11"]["inputs"]["steps"] == 20
+        assert "re-use the same adults" in prompt
+        assert graph["11"]["inputs"]["steps"] == 40
     else:
         assert graph["6"]["inputs"]["width"] == graph["6"]["inputs"]["height"] == 512
         assert graph["9"]["inputs"]["steps"] == 20
+
+
+def test_reference_appearance_style_is_not_forwarded_as_a_style_instruction(setup):
+    _, service, _, _, _, control = setup
+    attach_characters(setup)
+    original = service.provider.call
+
+    def photographic_style(task, context, schema, **kwargs):
+        result = original(task, context, schema, **kwargs)
+        if schema.__name__ == "CharacterAppearance":
+            return result.model_copy(update={"style": "photorealistic photograph with skin pores"})
+        return result
+
+    service.provider.call = photographic_style
+    assert request_image(setup).status_code == 200
+    assert all("style" not in p for p in service.provider.context["identityProfiles"])
+    assert "Simple animation-style image or illustration." in service.provider.task
+    prompt = json.loads(submissions(control)[0].content)["workflow"]["4"]["inputs"]["prompt"]
+    assert "photorealistic" not in prompt and "skin pores" not in prompt
+    assert "Illustration style:" not in prompt
+    assert "CHARACTER APPEARANCE LOCK" in prompt

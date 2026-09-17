@@ -11,19 +11,18 @@ from .video_workflows import validate_graph
 ALLOWED = {"UNETLoader", "CLIPLoader", "VAELoader", "CLIPTextEncode", "FluxGuidance", "BasicGuider",
            "EmptyFlux2LatentImage", "RandomNoise", "KSamplerSelect", "Flux2Scheduler",
            "SamplerCustomAdvanced", "VAEDecode", "SaveImage"}
-STYLE_VERSION = "soft-hand-drawn-cartoon-v2"
+STYLE_VERSION = "simple-animation-illustration-v3"
 RESOLUTION_VERSION = "512px-v2"
-PRESET = "flux2-dev-cartoon-512-action-scene-v6"
-REFERENCE_PRESET = "qwen-image-edit-2511-cartoon-512-action-scene-v6"
-PORTRAIT_PRESET = "qwen-image-2512-cartoon-solo-portrait-512-20steps-v7"
+PRESET = "flux2-dev-animation-512-action-scene-v7"
+REFERENCE_PRESET = "qwen-image-edit-2511-animation-512-40steps-action-scene-v8"
+PORTRAIT_PRESET = "qwen-image-2512-animation-solo-portrait-512-20steps-v8"
 PORTRAIT_SIZE = 512
-ILLUSTRATION_STYLE = (
-    " Overall style: warm hand-drawn cartoon illustration for respectful adult educational material. "
-    "Use clear drawn lines, soft colors and simplified fictional characters with expressive, readable faces. "
-    "Gentle shading is welcome. Preserve character identity and scene meaning in an approachable illustrated style, "
-    "not a photograph or live-action image. Keep skin drawn and simplified rather than photographic with pores."
+ILLUSTRATION_STYLE = "Simple animation-style image or illustration. "
+PLANNING_STYLE_INSTRUCTION = (
+    "그림체 요구는 'Simple animation-style image or illustration.'입니다. "
+    "출력에는 인물 외형·행동·배경과 사건 의미만 작성하세요. "
+    "스타일 문장은 서버에서 붙이므로 출력에 중복하거나 외형 참고의 그림체 설명을 복사하거나 별도의 스타일 지시를 추가하지 마세요. "
 )
-PHOTO_NEGATIVE = "photograph, photorealistic, live-action, realistic skin texture, skin pores"
 PORTRAIT_ALLOWED = {"UNETLoader", "CLIPLoader", "VAELoader", "CLIPTextEncode", "ModelSamplingAuraFlow",
                     "EmptySD3LatentImage", "KSampler", "VAEDecode", "SaveImage"}
 PORTRAIT_COMPOSITION = (
@@ -48,18 +47,19 @@ REFERENCE_ALLOWED = {"UNETLoader", "CLIPLoader", "VAELoader", "LoadImage", "Flux
                      "KSampler", "VAEDecode", "SaveImage"}
 WIDTH = HEIGHT = 512
 STEPS = 20
+REFERENCE_STEPS = 40
 
 
 def compile_portrait(illustration, seed, prefix):
     """Qwen-Image-2512 normal text-to-image path, without reference or Lightning."""
     def node(kind, **inputs):
         return WorkflowNode(class_type=kind, inputs=inputs)
-    prompt = ("Respectful adult educational illustration, simple drawn shapes, calm colors, white background. "
+    prompt = (ILLUSTRATION_STYLE + "Respectful adult educational material, white background. "
               "One anonymous adult, no real likeness, no letters, numbers, logos or speech text. " +
-              illustration.prompt + ILLUSTRATION_STYLE + PORTRAIT_COMPOSITION)
+              illustration.prompt + PORTRAIT_COMPOSITION)
     negative = ("two people, multiple people, crowd, background people, duplicate person, reflections, "
                 "inset portrait, split panels, collage, scenery, furniture, props, icons, background decorations, "
-                "colored background, text, numbers, logos, watermark, hidden face, cropped head, " + PHOTO_NEGATIVE)
+                "colored background, text, numbers, logos, watermark, hidden face, cropped head")
     graph = {
         "1": node("UNETLoader", unet_name="qwen_image_2512_fp8_e4m3fn.safetensors", weight_dtype="default"),
         "2": node("CLIPLoader", clip_name="qwen_2.5_vl_7b_fp8_scaled.safetensors", type="qwen_image", device="default"),
@@ -79,8 +79,8 @@ def compile_portrait(illustration, seed, prefix):
 def compile_image(illustration, seed, prefix):
     def node(kind, **inputs):
         return WorkflowNode(class_type=kind, inputs=inputs)
-    prompt = ("Respectful adult educational scene illustration, simple drawn shapes, calm colors. "
-              "Anonymous adults, no real likeness, no letters, numbers, logos or speech text. " + illustration.prompt + VISIBLE_FACES + ILLUSTRATION_STYLE)
+    prompt = (ILLUSTRATION_STYLE + "Respectful adult educational scene. "
+              "Anonymous adults, no real likeness, no letters, numbers, logos or speech text. " + illustration.prompt + VISIBLE_FACES)
     graph = {
         "1": node("UNETLoader", unet_name="flux2_dev_fp8mixed.safetensors", weight_dtype="default"),
         "2": node("CLIPLoader", clip_name="mistral_3_small_flux2_bf16.safetensors", type="flux2", device="default"),
@@ -100,7 +100,7 @@ def compile_image(illustration, seed, prefix):
     return graph
 
 
-def compile_reference_image(illustration, seed, prefix, references):
+def compile_reference_image(illustration, seed, prefix, references, *, steps=REFERENCE_STEPS):
     """Qwen-Image-Edit-2511 with one to three uploaded character images.
 
     Each reference is an uploaded Cloud filename, in the same order as imageNumber in
@@ -110,24 +110,26 @@ def compile_reference_image(illustration, seed, prefix, references):
     """
     if not 1 <= len(references) <= 3:
         raise ValueError("Expected one to three character references")
+    if steps not in {20, 40}:
+        raise ValueError("Reference comparison supports only 20 or 40 steps")
     def node(kind, **inputs):
         return WorkflowNode(class_type=kind, inputs=inputs)
     pictures = ", ".join(f"Picture {i + 1}" for i in range(len(references)))
-    prompt = ("Edit the supplied character images into one respectful educational scene. "
+    prompt = (ILLUSTRATION_STYLE + "Edit the supplied character images into one respectful educational scene. "
               "Recompose the solo portraits into the described actions and setting, not a portrait lineup. "
               "The reference backgrounds and poses are not scene requirements. "
-              "Keep the exact illustrated people from " + pictures + ". "
-              "Preserve their faces, hair, clothing and colors. Express their identity as hand-drawn cartoon characters. "
-              "Change poses and the scene while keeping the illustrated characters recognizable. "
+              "Keep the same people from " + pictures + ". "
+              "Preserve their faces, hair, clothing and colors. "
+              "Change poses and the scene while keeping the characters recognizable. "
               "Image numbers in the instruction refer to the matching Picture numbers. "
               "Only include characters relevant to the described scene. "
               "Show their distinct roles and the direction of their relationship without swapping identities. "
               "Do not copy the reference layout or create a contact sheet. No text, numbers, logos. " + illustration.prompt +
               " Identity preservation takes priority over generic appearance descriptions in the scene: "
-              "re-use the exact illustrated adults from the reference images. Preserve each person's apparent age, "
+              "re-use the same adults from the reference images. Preserve each person's apparent age, "
               "face shape, hairstyle, facial hair (including every beard or moustache), skin tone, clothing, "
               "shoes and body proportions. Do not remove facial hair, make an adult younger, change outfits, "
-              "swap faces, or replace anyone with a generic new character. Preserve identity while changing pose and scene." + VISIBLE_FACES + ILLUSTRATION_STYLE)
+              "swap faces, or replace anyone with a generic new character. Preserve identity while changing pose and scene." + VISIBLE_FACES)
     graph = {
         "1": node("UNETLoader", unet_name="qwen_image_edit_2511_fp8mixed.safetensors", weight_dtype="default"),
         "2": node("CLIPLoader", clip_name="qwen_2.5_vl_7b_fp8_scaled.safetensors", type="qwen_image", device="default"),
@@ -145,10 +147,10 @@ def compile_reference_image(illustration, seed, prefix, references):
         images[f"image{index + 1}"] = [reduced, 0]
     graph.update({
         "4": node("TextEncodeQwenImageEditPlus", clip=["2", 0], vae=["3", 0], prompt=prompt, **images),
-        "5": node("TextEncodeQwenImageEditPlus", clip=["2", 0], vae=["3", 0], prompt=PHOTO_NEGATIVE, **images),
+        "5": node("TextEncodeQwenImageEditPlus", clip=["2", 0], vae=["3", 0], prompt="", **images),
         "6": node("VAEEncode", pixels=images["image1"], vae=["3", 0]),
         "11": node("KSampler", model=["8", 0], positive=["4", 0], negative=["5", 0], latent_image=["6", 0],
-                   seed=seed, steps=20, cfg=4.0, sampler_name="euler", scheduler="simple", denoise=1.0),
+                   seed=seed, steps=steps, cfg=4.0, sampler_name="euler", scheduler="simple", denoise=1.0),
         "12": node("VAEDecode", samples=["11", 0], vae=["3", 0]),
         "13": node("SaveImage", images=["12", 0], filename_prefix=prefix),
     })

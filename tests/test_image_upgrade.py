@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from app.image_workflows import (ALLOWED, PORTRAIT_ALLOWED, PORTRAIT_PRESET, REFERENCE_ALLOWED,
+from app.image_workflows import (ALLOWED, ILLUSTRATION_STYLE, STYLE_VERSION, PORTRAIT_ALLOWED, PORTRAIT_PRESET, REFERENCE_ALLOWED,
                                  compile_image, compile_portrait, compile_reference_image)
 from app.studio_generation import IllustrationPlan, fingerprint, image_context
 from app.video_workflows import validate_graph
@@ -11,8 +11,9 @@ from test_studio_generation import client, setup, request_image, submissions, at
 
 
 @pytest.mark.parametrize("with_references", [False, True])
+@pytest.mark.parametrize("old_scene_revision", [False, True])
 @pytest.mark.parametrize("status", ["prepared", "running", "submission_unknown", "ready"])
-def test_scene_upgrade_replans_unsubmitted_but_preserves_paid_512_jobs(setup, monkeypatch, with_references, status):
+def test_scene_upgrade_replans_unsubmitted_but_preserves_paid_512_jobs(setup, monkeypatch, with_references, old_scene_revision, status):
     _, service, project, _, card, control = setup
     if with_references:
         attach_characters(setup)
@@ -22,6 +23,8 @@ def test_scene_upgrade_replans_unsubmitted_but_preserves_paid_512_jobs(setup, mo
     assert request_image(setup).status_code == (200 if status == "ready" else 503)
     context = image_context(service.store.get(project["id"], "alice")[0], card["id"])
     old_preset = "qwen-image-edit-2511-cartoon-512-identity-v5" if with_references else "flux2-dev-cartoon-512-illustration-v5"
+    if old_scene_revision:
+        old_preset = "qwen-image-edit-2511-cartoon-512-action-scene-v6" if with_references else "flux2-dev-cartoon-512-action-scene-v6"
     old_digest = fingerprint(context, old_preset)
     key = "prompt" if with_references else "text"
     with service.store.store.connect() as db:
@@ -29,6 +32,7 @@ def test_scene_upgrade_replans_unsubmitted_but_preserves_paid_512_jobs(setup, mo
         original_id = job["id"]
         job["fingerprint"] = old_digest
         job.pop("scene_revision", None)
+        job["plan_style_revision"] = "soft-hand-drawn-cartoon-v2"
         job["plan"] = {"prompt": "Legacy portrait-like scene on a white background.", "alt": "이전 그림", "meaning": "이전 설명"}
         job["workflow"]["4"]["inputs"][key] = "Legacy portrait-like scene on a white background."
         original_workflow = copy.deepcopy(job["workflow"])
@@ -50,7 +54,7 @@ def test_scene_upgrade_replans_unsubmitted_but_preserves_paid_512_jobs(setup, mo
     if updated:
         assert current["scene_revision"] == "action-staging-v1"
         assert "Main visible action:" in current["workflow"]["4"]["inputs"][key]
-        assert current["style_revision"] == "soft-hand-drawn-cartoon-v2"
+        assert current["style_revision"] == STYLE_VERSION
         assert current["resolution_revision"] == "512px-v2"
     else:
         assert current["workflow"] == original_workflow
@@ -80,7 +84,7 @@ def test_dev_text_generation_and_qwen_edit_receive_ordered_reference_images():
     assert refs["30"].class_type == refs["31"].class_type == "ImageScaleBy"
     assert refs["30"].inputs == {"image": ["21", 0], "upscale_method": "area", "scale_by": 0.5}
     assert refs["31"].inputs == {"image": ["23", 0], "upscale_method": "area", "scale_by": 0.5}
-    assert refs["11"].inputs["steps"] == 20 and refs["11"].inputs["cfg"] == 4.0
+    assert refs["11"].inputs["steps"] == 40 and refs["11"].inputs["cfg"] == 4.0
     assert [refs[k].inputs["image"] for k in ["20", "22"]] == ["first.png", "second.png"]
     assert not any(n.class_type in {"ReferenceLatent", "ConditioningZeroOut", "LoraLoaderModelOnly"} for n in refs.values())
 
@@ -112,6 +116,56 @@ def test_scene_upgrade_finds_unknown_text_job_with_unrelated_project_portraits(s
     assert service.provider.calls == 1 and len(submissions(control)) == 1
 
 
+def test_reference_comparison_changes_only_steps():
+    plan = IllustrationPlan(prompt="Image 1 listens to image 2 in a neutral space.", alt="대화", meaning="상황")
+    low = compile_reference_image(plan, 42, "comparison", ["first.png", "second.png"], steps=20)
+    high = compile_reference_image(plan, 42, "comparison", ["first.png", "second.png"])
+    assert low["11"].inputs["steps"] == 20 and high["11"].inputs["steps"] == 40
+    low["11"].inputs["steps"] = 40
+    assert low == high
+    with pytest.raises(ValueError):
+        compile_reference_image(plan, 42, "comparison", ["first.png"], steps=100)
+
+
+@pytest.mark.parametrize("status", ["prepared", "running", "submission_unknown", "ready"])
+def test_40step_upgrade_preserves_accepted_20step_jobs_and_seed(setup, monkeypatch, status):
+    _, service, project, _, card, control = setup
+    attach_characters(setup)
+    monkeypatch.setattr("app.studio_generation.WAIT_SECONDS", 0)
+    control["status"] = "running" if status == "running" else "succeeded"
+    control["submit_error"] = 429 if status == "prepared" else "timeout" if status == "submission_unknown" else None
+    assert request_image(setup).status_code == (200 if status == "ready" else 503)
+    context = image_context(service.store.get(project["id"], "alice")[0], card["id"])
+    old_digest = fingerprint(context, "qwen-image-edit-2511-animation-512-action-scene-v7")
+    with service.store.store.connect() as db:
+        job = json.loads(db.execute("SELECT body FROM studio_image_jobs").fetchone()["body"])
+        job["fingerprint"] = old_digest
+        job["workflow"]["11"]["inputs"]["steps"] = 20
+        original_id, original_seed = job["id"], job["seed"]
+        original_workflow = copy.deepcopy(job["workflow"])
+        db.execute("UPDATE studio_image_jobs SET fingerprint=?,body=?,lease_until=0 WHERE id=?",
+                   (old_digest, json.dumps(job), job["id"]))
+    control["status"], control["submit_error"] = "succeeded", None
+    response = request_image(setup)
+    if status == "submission_unknown":
+        assert response.status_code == 503 and response.json()["detail"]["code"] == "image_submission_unknown"
+    else:
+        assert response.status_code == 200, response.text
+    assert len(submissions(control)) == (2 if status in {"prepared", "ready"} else 1)
+    assert service.provider.calls == (2 if status == "ready" else 1)
+    with service.store.store.connect() as db:
+        jobs = [json.loads(r["body"]) for r in db.execute("SELECT body FROM studio_image_jobs").fetchall()]
+    current = next(j for j in jobs if j["fingerprint"] == fingerprint(context))
+    assert current["workflow"]["11"]["inputs"]["steps"] == (40 if status in {"prepared", "ready"} else 20)
+    assert (current["id"] != original_id) == (status == "ready")
+    if status == "prepared":
+        assert current["seed"] == original_seed
+        original_workflow["11"]["inputs"]["steps"] = 40
+        assert current["workflow"] == original_workflow
+    elif status in {"running", "submission_unknown"}:
+        assert current["workflow"] == original_workflow
+
+
 def test_initial_portrait_uses_qwen_and_new_cache_key():
     plan = IllustrationPlan(prompt="An anonymous adult with a clearly visible face.", alt="인물", meaning="등장인물")
     graph = compile_portrait(plan, 42, "test")
@@ -126,7 +180,7 @@ def test_initial_portrait_uses_qwen_and_new_cache_key():
     assert graph["10"].inputs == {"model": ["1", 0], "shift": 3.1}
     assert graph["7"].inputs["seed"] == 42
     context = {"role": "person", "characterReferences": []}
-    assert PORTRAIT_PRESET == "qwen-image-2512-cartoon-solo-portrait-512-20steps-v7"
+    assert PORTRAIT_PRESET == "qwen-image-2512-animation-solo-portrait-512-20steps-v8"
     assert fingerprint(context) != fingerprint(context, "qwen-image-2512-cartoon-solo-portrait-768-20steps-v6")
     assert fingerprint(context) != fingerprint(context, "qwen-image-2512-flat-2d-solo-portrait-768-20steps-v5")
     assert fingerprint(context) != fingerprint(context, "qwen-image-2512-flat-2d-solo-portrait-20steps-v3")
@@ -164,24 +218,22 @@ def test_all_image_paths_require_visible_faces_not_audience_facing():
         assert "three-quarter front view" not in prompt
 
 
-def test_all_image_paths_use_soft_cartoon_style_without_strict_2d_constraints():
+def test_all_image_paths_use_only_simple_animation_or_illustration_style():
     plan = IllustrationPlan(prompt="An adult considering a court order.", alt="인물", meaning="설명")
     graphs = [compile_portrait(plan, 1, "test"), compile_image(plan, 1, "test"),
               compile_reference_image(plan, 1, "test", ["person.png"])]
     for graph in graphs:
         prompt = graph["4"].inputs.get("text", graph["4"].inputs.get("prompt"))
-        assert prompt.index("Overall style") > prompt.index(plan.prompt)
-        assert "warm hand-drawn cartoon illustration" in prompt
-        assert "simplified fictional characters" in prompt
-        assert "Gentle shading is welcome" in prompt
-        assert "not a photograph" in prompt
-        for removed in ("strictly flat", "uniform solid color fills", "No 3D", "2.5D", "ambient occlusion", "no gradients"):
+        assert prompt.startswith(ILLUSTRATION_STYLE)
+        assert prompt.count(ILLUSTRATION_STYLE.strip()) == 1
+        for removed in ("2D", "3D", "2.5D", "shading", "gradient", "photograph", "photorealistic",
+                        "skin pores", "hand-drawn", "soft colors", "simple drawn shapes", "calm colors"):
             assert removed not in prompt
     for graph in (graphs[0], graphs[2]):
         negative = graph["5"].inputs.get("text", graph["5"].inputs.get("prompt"))
-        assert "photograph" in negative and "photorealistic" in negative and "skin pores" in negative
-        for removed in ("3D", "2.5D", "clay render", "volume shading", "gradients", "ambient occlusion"):
+        for removed in ("2D", "3D", "2.5D", "shading", "gradient", "photograph", "photorealistic", "skin pores"):
             assert removed not in negative
+    assert graphs[2]["5"].inputs["prompt"] == ""
 
 
 @pytest.mark.parametrize("count", [1, 3])
@@ -311,6 +363,7 @@ def test_qwen_upgrade_preserves_existing_dev_reference_submissions(setup, monkey
 @pytest.mark.parametrize("status", ["running", "submission_unknown", "ready", "prepared"])
 @pytest.mark.parametrize("old_preset,old_model,old_steps", [
     ("flux-schnell-illustration-v2", "flux1-schnell.safetensors", 4),
+    ("qwen-image-2512-cartoon-solo-portrait-512-20steps-v7", "qwen_image_2512_fp8_e4m3fn.safetensors", 20),
     ("qwen-image-2512-solo-portrait-v1", "qwen_image_2512_fp8_e4m3fn.safetensors", 50)])
 def test_qwen_portrait_upgrade_preserves_paid_jobs_not_ready_cache(setup, monkeypatch, status, old_preset, old_model, old_steps):
     client, service, project, _, _, control = setup
@@ -329,6 +382,9 @@ def test_qwen_portrait_upgrade_preserves_paid_jobs_not_ready_cache(setup, monkey
         job["fingerprint"] = old_digest
         job["workflow"]["1"]["inputs"]["unet_name"] = old_model
         job["workflow"]["7"]["inputs"]["steps"] = old_steps
+        job["plan_style_revision"] = "soft-hand-drawn-cartoon-v2"
+        job["plan"]["prompt"] = "A photograph of an adult in a legacy style."
+        job["workflow"]["4"]["inputs"]["text"] = "Legacy photograph style"
         job.pop("portrait_composition", None)
         original_id = job["id"]
         db.execute("UPDATE studio_image_jobs SET fingerprint=?,body=?,lease_until=0 WHERE id=?",
@@ -349,6 +405,8 @@ def test_qwen_portrait_upgrade_preserves_paid_jobs_not_ready_cache(setup, monkey
     assert current["workflow"]["1"]["inputs"]["unet_name"] == (
         "qwen_image_2512_fp8_e4m3fn.safetensors" if status in {"ready", "prepared"} else old_model)
     assert current["workflow"]["7"]["inputs"]["steps"] == (20 if status in {"ready", "prepared"} else old_steps)
+    prompt = current["workflow"]["4"]["inputs"]["text"]
+    assert (ILLUSTRATION_STYLE.strip() in prompt) == (status in {"ready", "prepared"})
 
 
 @pytest.mark.parametrize("kind,old_preset", [
@@ -428,7 +486,7 @@ def test_style_upgrade_preserves_paid_jobs_rebuilds_unsubmitted_only(setup, monk
     current = next(j for j in jobs if j["fingerprint"] == fingerprint(context))
     assert (current["id"] != original_id) == (status == "ready")
     prompt = current["workflow"]["4"]["inputs"][key]
-    assert ("warm hand-drawn cartoon" in prompt) == (status in {"ready", "prepared"})
+    assert (ILLUSTRATION_STYLE.strip() in prompt) == (status in {"ready", "prepared"})
     if kind == "portrait":
         size = 512 if status in {"ready", "prepared"} else old_size
         assert current["workflow"]["6"]["inputs"] == {"width": size, "height": size, "batch_size": 1}

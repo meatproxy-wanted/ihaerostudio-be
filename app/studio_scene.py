@@ -2,6 +2,7 @@
 from pydantic import Field
 
 from .studio_models import Wire
+from .image_workflows import PLANNING_STYLE_INSTRUCTION
 
 SCENE_VERSION = "action-staging-v1"
 
@@ -23,8 +24,8 @@ class SceneIllustrationPlan(Wire):
                 f"Meaning to preserve: {self.semanticBoundary} {self.prompt}")
 
 
-SCENE_TASK = """# 역할
-성인 독자가 카드의 상황을 이해하도록, 한 장의 손그림 만화 장면을 설계하세요.
+SCENE_TASK = PLANNING_STYLE_INSTRUCTION + """\n# 역할
+성인 독자가 카드의 상황을 이해하도록, 한 장의 장면을 설계하세요.
 인물 소개 그림이 아니라 행동의 주체·대상·방향과 사물의 상태가 읽히는 장면이어야 합니다.
 
 # 출력

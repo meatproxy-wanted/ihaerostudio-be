@@ -147,6 +147,6 @@ def identity_instructions(profiles):
             f'Facial hair: {facial_hair}. '
             f'Upper clothing: {profile["upperClothing"]}. '
             f'Lower clothing: {profile["lowerClothing"]}. Shoes: {profile["shoes"]}. '
-            f'Accessories: {profile["accessories"]}. Illustration style: {profile["style"]}.'
+            f'Accessories: {profile["accessories"]}.'
         )
     return "\n".join(lines)
