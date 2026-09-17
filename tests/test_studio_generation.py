@@ -110,7 +110,7 @@ def test_generates_caches_persists_and_saves_fe_image(setup):
     assert restarted.candidates(project["id"], "alice", card["id"]) == result.json()
     assert service.provider.calls == len(submissions(control)) == 1
     posted = json.loads(submissions(control)[0].content)
-    assert len(posted["workflow"]) == 9 and posted["workflow"]["6"]["inputs"]["batch_size"] == 1
+    assert len(posted["workflow"]) == 13 and posted["workflow"]["6"]["inputs"]["batch_size"] == 1
     assert submissions(control)[0].headers["Idempotency-Key"]
     document["images"] = [{"id": "fe-generated-image", **image, "source": "library"}]
     card["imageId"] = "fe-generated-image"
@@ -241,9 +241,9 @@ def test_saved_portraits_are_uploaded_and_condition_the_same_scene(setup):
     assert len(uploads) == 2
     assert all(b"\x89PNG" in r.content and r.headers["X-API-Key"] == "private-comfy-test-key" for r in uploads)
     graph = json.loads(submissions(control)[0].content)["workflow"]
-    assert graph["1"]["inputs"]["unet_name"] == "flux-2-klein-9b.safetensors"
+    assert graph["1"]["inputs"]["unet_name"] == "flux2_dev_fp8mixed.safetensors"
     assert [n["inputs"]["image"] for n in graph.values() if n["class_type"] == "LoadImage"] == [f"{n:064x}.png" for n in [1, 2]]
-    assert len([n for n in graph.values() if n["class_type"] == "ReferenceLatent"]) == 4
+    assert len([n for n in graph.values() if n["class_type"] == "ReferenceLatent"]) == 2
     assert request_image(setup).json() == result.json()
     assert len(submissions(control)) == 1 and len([r for r in control["calls"] if r.url.path == "/api/upload/image"]) == 2
     # Changing the saved identity information invalidates the dependent scene cache.
@@ -392,7 +392,7 @@ def test_decision_workflow_keeps_order_separate_from_completed_payment(setup):
     assert client.put(path(project) + "/document", json=document).status_code == 200
     assert request_image(setup).status_code == 200
     graph = json.loads(submissions(control)[0].content)["workflow"]
-    prompt = graph["4"]["inputs"]["clip_l"]
+    prompt = graph["4"]["inputs"]["text"]
     assert "Mandatory court-decision scene constraint" in prompt and "Keep their hands apart" in prompt
 
 
@@ -447,7 +447,7 @@ def test_multiple_people_reference_is_rejected_before_comfy_submission(setup):
 
 def test_non_portrait_emphasizes_situation_without_visible_writing(setup):
     assert request_image(setup).status_code == 200
-    prompt = json.loads(submissions(setup[-1])[0].content)["workflow"]["4"]["inputs"]["clip_l"]
+    prompt = json.loads(submissions(setup[-1])[0].content)["workflow"]["4"]["inputs"]["text"]
     assert "Situation-first composition" in prompt
     assert "Absolutely no visible writing" in prompt
     assert "neutral setting when unspecified" in prompt

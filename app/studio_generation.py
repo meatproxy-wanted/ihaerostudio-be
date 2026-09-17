@@ -45,8 +45,8 @@ def image_context(state, card_id):
                           for s in card["sentences"]]}
 
 
-def fingerprint(context):
-    preset = REFERENCE_PRESET if context.get("characterReferences") else PRESET
+def fingerprint(context, preset=None):
+    preset = preset or (REFERENCE_PRESET if context.get("characterReferences") else PRESET)
     payload = ["character-context-v1", preset, context]
     if context["role"] != "person":
         payload.append("detailed-situation-no-text-v1")
@@ -72,12 +72,27 @@ class StudioGeneration:
                 UNIQUE(owner, project_id, card_id, fingerprint)
             )""")
 
-    def claim(self, project_id, owner, card_id, digest):
+    def claim(self, project_id, owner, card_id, digest, legacy_digest=None):
         with self.store.store.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute("""SELECT * FROM studio_image_jobs
                 WHERE owner=? AND project_id=? AND card_id=? AND fingerprint=?""",
                 (owner, project_id, card_id, digest)).fetchone()
+            if row is None and legacy_digest:
+                legacy = db.execute("""SELECT * FROM studio_image_jobs
+                    WHERE owner=? AND project_id=? AND card_id=? AND fingerprint=?""",
+                    (owner, project_id, card_id, legacy_digest)).fetchone()
+                # Preserve paid/prepared work during a model upgrade. Completed cache
+                # entries stay under the old preset; new requests may create Dev images.
+                if legacy:
+                    old_job = json.loads(legacy["body"])
+                    if old_job["status"] != "ready":
+                        if legacy["lease_until"] > time.time():
+                            fail(503, "image_in_progress", "그림을 생성하고 있어요. 잠시 후 같은 작업을 다시 확인해요.")
+                        old_job["fingerprint"] = digest
+                        db.execute("UPDATE studio_image_jobs SET fingerprint=?,body=? WHERE id=?",
+                                   (digest, json.dumps(old_job), old_job["id"]))
+                        row = db.execute("SELECT * FROM studio_image_jobs WHERE id=?", (old_job["id"],)).fetchone()
             if row:
                 job = json.loads(row["body"])
                 if job["status"] == "ready":
@@ -106,7 +121,8 @@ class StudioGeneration:
         # Validate every selected reference before spending money on scene planning or generation.
         references = context["characterReferences"]
         pixels = [reference_bytes(self.store, state, owner, ref) for ref in references]
-        job = self.claim(project_id, owner, card_id, fingerprint(context))
+        legacy_preset = "flux2-klein-9b-verified-identity-v3" if references else "flux-schnell-illustration-v2"
+        job = self.claim(project_id, owner, card_id, fingerprint(context), fingerprint(context, legacy_preset))
         if job["status"] == "ready":
             state = self.store.get(project_id, owner)[0]
             if fingerprint(image_context(state, card_id)) != job["fingerprint"]:
