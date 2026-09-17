@@ -2,6 +2,8 @@
 
 프로젝트 전체 흐름은 [프로젝트 요약](PROJECT_OVERVIEW.md), 요청 계약은 [FE 연동](FRONTEND.md)을 봅니다.
 이 문서는 `app/studio_generation.py` 등의 현재 분기 조건을 설명하며 과거 변경 이력을 기본 동작으로 나열하지 않습니다.
+아래는 기본 `STUDIO_SCENE_MODE=single` 경로입니다. 고해상도 4컷 생성은
+옵트인 `storyboard4` [실험 문서](STORYBOARD_EXPERIMENT.md)에 별도로 정리했습니다.
 
 ## 생성 경로
 
@@ -73,7 +75,8 @@ Lightning LoRA는 사용하지 않습니다. 실행 전 해당 Cloud 계정의 �
 
 ## 자동 적용과 후보 반환
 
-`document/prepare-images`는 인물 → 장면 순서로 카드당 최대 한 개씩 생성·자동 저장합니다.
+기본 `document/prepare-images`는 인물 → 장면 순서로 카드당 최대 한 개씩 생성·자동 저장합니다.
+4컷 실험에서도 인물은 그대로이며 장면만 최대 4개를 한 시트로 생성·크롭·일괄 적용합니다.
 `running`이면 이어 호출하고 `ready` 또는 `skipped`에서 끝냅니다.
 완료한 일괄 작업은 다시 실행되지 않으며 장면을 제거하거나 새 카드를 추가한 것만으로 자동 재생성하지 않습니다.
 초안 재생성은 고정 인물만 보존하고 새 장면의 일괄 작업을 초기화합니다.

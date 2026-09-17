@@ -78,6 +78,14 @@ Comfy 완료를 90초간 기다려도 끝나지 않으면 `503 image_in_progress
 Comfy 접수 결과가 불확실하거나 작업이 실패·만료되면 자동으로 새 유료 작업을 제출하지 않습니다.
 생성 그림 파일은 서버가 PNG로 보관하고 `/api/studio/assets/{id}` 주소로 내주므로 제공자의 임시 URL 만료에 영향을 받지 않습니다.
 
+옵트인 `STUDIO_SCENE_MODE=storyboard4` 실험은 prepare-images의 장면 최대 4개를
+Qwen Edit 40 steps·CFG 4의 2048×2048 시트로 생성해 각각 1024×1024로 자릅니다.
+기준 인물은 묶음 전체 1~3명이고 시트와 모든 크롭이 자료 용량 한도에 포함됩니다.
+진행 중 일괄 요청은 같은 응답 계약을 사용하며 completed가 최대 4씩 증가합니다.
+실험의 Comfy 조회 대기는 최대 45초이고 전체 HTTP 제한이 아닙니다.
+설정을 single로 되돌려도 이미 예약한 묶음은 중복 유료 제출 없이 이어 확인하며 새 묶음만 기존 경로를 사용합니다.
+수동 assist/images는 실험 설정과 관계없이 기존 카드별 후보 경로입니다. 컷 경계·외형·의미는 제작자가 직접 검토합니다.
+
 실제 AI를 호출하면 관련 원문·사건 구조·편집 텍스트와 레퍼런스 픽셀이 OpenAI로 전달됩니다. 장면 생성 시 설명과 레퍼런스 이미지가 Comfy로 전달됩니다.
 그림 파일 URL은 인증 없이 조회됩니다. 미공개 문서의 접근 통제와 다르며 공개 해제가 그림 URL 회수는 아닙니다.
 그림과 대체텍스트는 생성 초안이며 제작자의 의미 대조가 필요합니다. 검토 API는 의미를 판정하는 AI가 아니라 규칙 점검입니다.
@@ -99,6 +107,9 @@ Comfy 접수 결과가 불확실하거나 작업이 실패·만료되면 자동�
 """
 
 ERRORS = {
+    "storyboard_cards_invalid": (422, "4컷 생성 대상이 올바르지 않아요.", "서로 다른 장면 카드 1~4개를 확인합니다."),
+    "storyboard_plan_invalid": (502, "4컷 설계의 카드 순서가 달라요.", "Comfy 제출 전 중단합니다. 저장된 카드 순서와 GPT 구조화 출력을 확인합니다."),
+    "storyboard_size_invalid": (502, "4컷 원본이 2048×2048이 아니에요.", "카드 적용을 중단합니다. 원격 생성 작업과 워크플로를 확인하고 같은 작업을 새 유료 작업으로 대체하지 않습니다."),
     "character_locked": (409, "등장인물 기준 그림은 고정돼 있어요.", "인물 그림의 교체·삭제와 인물 카드 제거는 불가합니다. 문장과 장면 그림, 대체텍스트는 편집할 수 있습니다. 초안 재생성도 기존 인물 그림을 유지합니다."),
     "character_library_unavailable": (503, "고정 캐릭터셋을 읽을 수 없어요.", "서버의 번들 캐릭터 자산과 manifest를 확인합니다. 데모나 새 얼굴 생성으로 대체하지 않습니다."),
     "character_library_changed": (409, "고정 캐릭터셋 버전이 바뀌었어요.", "이 자료에 배정된 원본 캐릭터 자산을 복원합니다. 기존 배정을 바꾸지 않습니다."),
@@ -240,7 +251,7 @@ describe("generate", "쉬운 글 초안 생성 — 완료된 문서와 프로젝
     "OpenAI 모드는 실제 생성, demo는 원문 복사입니다. 서버는 모든 새 문장에 origin=ai-draft·verified=false를 강제합니다. 처음 버전은 0이고 재생성은 기존 편집 문서를 교체하며 saveRevision/contentRevision을 각각 증가시키고 검토를 해제합니다. 실패하면 기존 문서를 보존합니다.",
     "반환한 document를 편집기에, project를 진행 상태에 반영하세요. 편집 진입 시 document/prepare-images를 완료까지 이어 호출하면 인물과 장면 그림을 자동 생성·적용합니다. 이후 장면 변경만 assist/images와 PUT document로 처리합니다. 재호출은 새 생성이므로 중복 클릭을 막으세요.", ref("StudioDocumentResult"), {"document": ex.DOCUMENT, "project": ex.DRAFT_PROJECT}, errors="not_found version_conflict character_locked " + DOCUMENT_ERRORS + " " + AI_ERRORS)
 describe("prepare_images", "편집 진입 그림 자동 준비 — 캐릭터 선택·얼굴 적용 후 장면 생성",
-    "편집 진입 직후 자동으로 호출합니다. 글은 먼저 document/generate로 만듭니다. 전체 컷을 한 요청이나 한 통이미지로 만드는 방식이 아니며 요청당 최대 카드 하나를 처리합니다.",
+    "편집 진입 직후 자동으로 호출합니다. 글은 먼저 document/generate로 만듭니다. 기본 STUDIO_SCENE_MODE=single은 요청당 최대 카드 하나를 처리합니다. 옵트인 storyboard4는 장면 최대 4개를 한 시트로 생성·분할합니다.",
     "project_id만 지정하고 본문은 없습니다. document/generate로 글을 먼저 만듭니다.",
     "{document,project,generation:{status,phase,completed,total,currentCardId}}를 반환합니다. running이면 같은 POST를 이어 호출합니다. ready는 전체 적용 완료, skipped는 그림 없음 설정 또는 demo 모드입니다.",
     "기본 STUDIO_CHARACTER_MODE=library에서는 GPT가 고정 캐릭터 10종에서 선택하고 partyId 배정을 저장합니다. 실제 당사자의 외모 재현이 아닙니다. 얼굴 크롭(768×768)을 카드에 자동 적용·고정하며 얼굴을 Comfy로 새로 그리지 않습니다. 장면의 OpenAI 외형 분석과 Comfy Qwen 입력에는 같은 캐릭터의 한 명짜리 기본 포즈 원본을 전달합니다. 4포즈 시트나 얼굴 크롭은 장면 입력으로 보내지 않고 stock 참조에 별도 화풍 샘플을 섞지 않습니다. 10종 후보와 자동 준비 인물 상한 6명·장면 참조 상한 3명은 별개입니다. Qwen Edit 장면은 40 steps·CFG 4, 정사각형 기준 768×768입니다. stock 참조 없는 새 장면은 분위기 샘플 경로입니다.\n\n완료 그림과 기존 적용·고정 인물은 유지합니다. 페이지를 닫으면 추가 카드 요청은 멈추고 재진입 시 진행 중 원격 작업을 조회합니다. 완료 일괄 준비는 장면 삭제·카드 추가만으로 다시 실행되지 않습니다. 새 장면은 assist/images로 만들고 초안 재생성은 고정 인물을 보존한 뒤 새 장면의 일괄 준비를 초기화합니다. 글·장면·대체텍스트는 편집 가능하며 인물 교체·삭제는 서버에서 차단합니다. 앞서 적용된 카드 결과는 이후 오류에도 남습니다. 접수 불확실·실행 실패·만료 작업을 자동 새 유료 작업으로 대체하지 않습니다.\n\ngenerate 호환 모드는 기존 Qwen 초상 생성과 한 명·흰 배경 GPT 검사를 사용합니다. 접수·접수 불확실 구형 작업은 원래 워크플로우로 조회하므로 steps·해상도가 다를 수 있습니다. 외형·상황 일치는 제작자가 직접 확인합니다.",
@@ -368,6 +379,20 @@ describe("reset", "데모 자료 초기화 — 현재 제작자의 모든 자료
 
 OPS["image_candidates"]["errors"] += ["comfy_invalid_workflow", "comfy_upstream_error", "comfy_not_found",
     "comfy_submission_unknown", "comfy_invalid_url", "comfy_invalid_node_schema", "comfy_image_too_large"]
+OPS["prepare_images"]["errors"] += ["storyboard_cards_invalid", "storyboard_plan_invalid", "storyboard_size_invalid",
+    "comfy_invalid_workflow", "comfy_upstream_error", "comfy_not_found", "comfy_submission_unknown",
+    "comfy_invalid_url", "comfy_invalid_node_schema", "comfy_image_too_large", "image_too_large", "unsupported_image", "invalid_image"]
+OPS["prepare_images"]["description"] += (
+    "\n\n### 롤백 가능한 4컷 실험\n\n"
+    "위 해상도는 기본 single 경로입니다. STUDIO_SCENE_MODE=storyboard4에서는 인물 선택·고정은 그대로 두고 "
+    "장면 최대 4개를 문서 순서로 예약합니다. GPT는 컷별 글·원문 근거를 설계하고 기준 인물 번호를 통일합니다. "
+    "Qwen Edit 40 steps·CFG 4, 2048×2048 latent로 2×2 시트를 생성해 좌상→우상→좌하→우하의 "
+    "1024×1024 컷으로 잘라 한 트랜잭션에서 함께 적용합니다. 원본도 보관하지만 독자 문서에는 넣지 않습니다. "
+    "남은 카드가 1~3개면 나머지 칸은 비우도록 지시합니다. 묶음 전체의 기준 인물은 1~3명이며 "
+    "모든 원본·크롭을 100개·12MiB 한도에 합산합니다. 원본이 2048×2048이 아니면 적용하지 않습니다. "
+    "컷 경계·얼굴·상황의 정확성을 자동 보장하지 않습니다. single로 되돌리면 새 묶음은 기존 경로지만 "
+    "이미 예약된 묶음은 같은 유료 작업을 이어 확인합니다. 수동 assist/images는 계속 단일 카드 경로입니다. "
+    "실험의 Comfy 조회는 최대 45초이며 running이면 동일 API로 이어 호출합니다.")
 
 
 def error_responses(codes, validation):

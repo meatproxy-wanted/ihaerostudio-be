@@ -67,7 +67,8 @@ def setup(client, monkeypatch):
     service.cloud.preflight = lambda *a, **k: VideoPreflight(compatible=True, preset="test", node_count=9, issues=[])
     png = io.BytesIO()
     Image.new("RGB", (32, 32), "blue").save(png, "PNG")
-    control = {"calls": [], "status": "succeeded", "host": "cloud.comfy.org", "submit_error": None, "on_poll": None}
+    control = {"calls": [], "status": "succeeded", "host": "cloud.comfy.org", "submit_error": None, "on_poll": None,
+               "png": png.getvalue()}
 
     def job():
         return {"id": "job-1", "status": control["status"], "progress": None,
@@ -92,10 +93,10 @@ def setup(client, monkeypatch):
             return httpx.Response(200, json=job())
         if request.url.path == "/api/v2/assets/asset-1":
             return httpx.Response(200, json={"id": "asset-1", "job_id": "job-1", "content_type": "",
-                "size_bytes": len(png.getvalue()), "url": "https://" + control["host"] + "/image.png?signed=private"})
+                "size_bytes": len(control["png"]), "url": "https://" + control["host"] + "/image.png?signed=private"})
         if request.url.path == "/image.png":
             assert "Authorization" not in request.headers and "X-API-Key" not in request.headers
-            return httpx.Response(200, content=png.getvalue())
+            return httpx.Response(200, content=control["png"])
         raise AssertionError(str(request.url))
 
     real_client = httpx.Client

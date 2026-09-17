@@ -26,8 +26,10 @@
 6. 규칙 점검과 제작자 최종 확인 후 고정 게시본을 만들고, 읽기 화면 공개 또는 FE 인쇄를 사용합니다.
 
 “한 번에 생성”은 편집 진입 시 자동 준비한다는 뜻입니다.
-서버 요청 한 번으로 전체 컷을 생성하거나 여러 컷짜리 이미지 한 장을 잘라 쓰는 구현은 아닙니다.
-요청당 최대 카드 하나를 처리하고 진행 상태를 DB에 보관합니다.
+기본 `STUDIO_SCENE_MODE=single`은 요청당 최대 카드 하나를 처리하고 진행 상태를 DB에 보관합니다.
+옵트인 `storyboard4` 실험은 같은 인물 레퍼런스로 2048×2048의 2×2 시트를 생성하고
+1024×1024 컷 최대 4개를 잘라 해당 카드에 함께 적용합니다. [실험·실생성 테스트·롤백](docs/STORYBOARD_EXPERIMENT.md)을 참고하세요.
+기본값과 수동 그림 후보 API는 그대로 유지합니다.
 
 ## 로컬 실행
 
@@ -62,6 +64,7 @@ uvicorn app.main:app --host 127.0.0.1 --port 8100 --no-access-log
 | `STUDIO_CHARACTER_MODE=library` (기본) | 고정 캐릭터 10종에서 선택. 얼굴 자산 제작에는 Comfy 호출이 없습니다. |
 | `COMFY_CLOUD_API_KEY` | Qwen 장면 생성에 필요합니다. OpenAI 모델은 장면 레퍼런스의 이미지 입력 분석도 지원해야 합니다. |
 | `STUDIO_CHARACTER_MODE=generate` | 새 자료의 초상을 Qwen으로 생성하는 호환 모드. 이미 배정·고정한 인물은 바꾸지 않습니다. |
+| `STUDIO_SCENE_MODE=single` (기본) / `storyboard4` (실험) | 카드별 장면 / 고해상도 네 컷 생성 후 크롭. 이미 예약된 묶음은 설정 롤백 뒤에도 같은 작업으로 이어 확인합니다. |
 
 현재 FE의 `lib/api/client.ts`는 HTTP 클라이언트입니다.
 `NEXT_PUBLIC_STUDIO_API_URL`로 BE 주소를 지정하고, 빌드 시 환경변수를 바꾼 경우 FE를 다시 빌드합니다.

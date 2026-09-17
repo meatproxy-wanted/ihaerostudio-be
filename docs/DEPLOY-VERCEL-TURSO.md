@@ -33,6 +33,7 @@ Marketplace가 어떤 변수 이름을 만들었든 아래 **코드가 읽는 �
 | `OPENAI_MODEL` | 해당 API 계정에서 사용 가능한 Responses·Structured Outputs·이미지 입력 지원 모델 ID |
 | `OPENAI_MAX_OUTPUT_TOKENS` | 기본 `16384`. 실제 모델·응답 크기에 맞춰 조정 |
 | `STUDIO_CHARACTER_MODE` | `library` (기본) |
+| `STUDIO_SCENE_MODE` | `single` (기본). 고해상도 4컷 실험만 `storyboard4`. [실험·롤백](STORYBOARD_EXPERIMENT.md) 확인 |
 | `COMFY_CLOUD_API_KEY` | 장면 자동 준비·후보 생성에 필요 |
 | `TURSO_DATABASE_URL` | Turso DB URL |
 | `TURSO_AUTH_TOKEN` | 해당 DB 접근 토큰 |

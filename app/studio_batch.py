@@ -1,6 +1,7 @@
 """Durable request-driven editor preparation; no serverless background threads."""
 import copy
 import json
+import time
 
 from fastapi import HTTPException
 
@@ -48,14 +49,17 @@ class StudioBatch:
     def __init__(self, generation):
         self.generation, self.store = generation, generation.store
 
-    def update(self, project_id, owner, operation):
+    def update(self, project_id, owner, operation, *, with_db=False):
         with self.store.store.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute("SELECT body FROM studio_projects WHERE id=? AND owner=? AND deleted=0", (project_id, owner)).fetchone()
             if row is None:
                 fail(404, "not_found", "자료를 찾을 수 없어요.")
             state = json.loads(row["body"])
-            operation(state)
+            if with_db:
+                operation(state, db)
+            else:
+                operation(state)
             state["project"]["updatedAt"] = timestamp()
             state["project"]["document"] = summarize_document(require_document(state))
             db.execute("UPDATE studio_projects SET body=?,version=version+1,updated_at=? WHERE id=? AND owner=?",
@@ -75,14 +79,33 @@ class StudioBatch:
             locks[card["partyId"]] = {"image": copy.deepcopy(image)}
 
     def prepare(self, project_id, owner):
-        def initialize(state):
+        def initialize(state, db):
             document = require_document(state)
+            batch = state.get("image_batch", {})
+            group = batch.get("storyboardGroup")
+            if group and self.generation.config.studio_scene_mode == "single":
+                row = db.execute("SELECT body,lease_until FROM studio_image_jobs WHERE owner=? AND project_id=? AND card_id=? AND fingerprint=?",
+                    (owner, project_id, "storyboard4:" + group["id"], group["digest"])).fetchone()
+                # A configuration rollback may abandon only definitely unsubmitted,
+                # idle work. Accepted, uncertain or failed paid work never falls back.
+                job = json.loads(row["body"]) if row else None
+                if row is None or (row["lease_until"] <= time.time() and job["status"] in {"pending", "planned", "prepared"}):
+                    batch.pop("storyboardGroup")
+                    batch["sceneMode"] = "single"
+                    if job:
+                        job["status"] = "abandoned"
+                        db.execute("UPDATE studio_image_jobs SET body=?,lease_until=0 WHERE id=?", (json.dumps(job), job["id"]))
             active = state["project"]["settings"]["illustrations"] == "with" and self.generation.provider.name != "demo"
             if active and state.get("image_batch", {}).get("status") == "skipped":
-                state.pop("image_batch", None)
+                if state["image_batch"].get("storyboardGroup"):
+                    state["image_batch"]["status"] = "running"
+                else:
+                    state.pop("image_batch", None)
             if (state["project"]["settings"]["illustrations"] != "with" or self.generation.provider.name == "demo") and state.get("image_batch", {}).get("status") == "running":
                 state["image_batch"]["status"] = "skipped"
             if state.get("image_batch"):
+                if not state["image_batch"].get("storyboardGroup"):
+                    state["image_batch"]["sceneMode"] = self.generation.config.studio_scene_mode
                 return
             if state["project"]["settings"]["illustrations"] != "with" or self.generation.provider.name == "demo":
                 state["image_batch"] = {"status": "skipped", "targets": [], "completed": []}
@@ -116,14 +139,19 @@ class StudioBatch:
                 fail(413, "image_limit", "모든 카드를 생성하면 그림 100개 한도를 넘어요. 프로젝트를 나눠 주세요.")
             if any(not c["imageId"] for c in ordered) and self.generation.config.studio_character_mode == "generate" and not state.get("character_library"):
                 self.generation.cloud.require_key()
-            state["image_batch"] = {"status": "running", "targets": [c["id"] for c in ordered], "completed": []}
+            state["image_batch"] = {"status": "running", "targets": [c["id"] for c in ordered], "completed": [],
+                                    "sceneMode": self.generation.config.studio_scene_mode}
 
-        state = self.update(project_id, owner, initialize)
+        state = self.update(project_id, owner, initialize, with_db=True)
         if state["image_batch"]["status"] in {"ready", "skipped"}:
             return self.result(state)
 
         def skip_attached(state):
             batch = state["image_batch"]
+            # A reserved group must be resumed/validated as a unit. An autosave
+            # attaching one of its cards must not start a second paid grouping.
+            if batch.get("storyboardGroup"):
+                return
             lookup = {c["id"]: c for c in cards(state["document"])}
             for card_id in batch["targets"]:
                 if card_id in batch["completed"]:
@@ -154,6 +182,31 @@ class StudioBatch:
         if self.generation.config.studio_character_mode == "library" or state.get("character_library"):
             self.generation.library.assign(project_id, owner)
             state = self.store.get(project_id, owner)[0]
+        current = next((c for c in cards(state["document"]) if c["id"] == card_id), None)
+        if current is None:
+            fail(409, "image_card_changed", "자동 생성 대상 카드가 삭제됐어요.")
+        if current["role"] != "person" and batch.get("sceneMode", "single") == "storyboard4":
+            from .studio_storyboard import StudioStoryboard, context_for, digest_for
+
+            def reserve(state):
+                batch = state["image_batch"]
+                if batch.get("storyboardGroup"):
+                    return
+                lookup = {c["id"]: c for c in cards(state["document"])}
+                ids = [i for i in batch["targets"] if i not in batch["completed"] and
+                       i in lookup and not lookup[i]["imageId"] and lookup[i]["role"] != "person"][:4]
+                if batch["status"] != "running" or not ids or ids[0] != card_id:
+                    fail(409, "image_card_changed", "4컷 생성 대상이 바뀌었어요.")
+                context = context_for(state, ids)
+                batch["storyboardGroup"] = {"id": uid(), "cardIds": ids, "digest": digest_for(context)}
+
+            state = self.update(project_id, owner, reserve)
+            try:
+                StudioStoryboard(self.generation).run(project_id, owner, state["image_batch"]["storyboardGroup"])
+            except HTTPException as error:
+                if not isinstance(error.detail, dict) or error.detail.get("code") != "image_in_progress":
+                    raise
+            return self.result(self.store.get(project_id, owner)[0])
         digest = fingerprint(image_context(state, card_id))
         try:
             result = self.generation.candidates(project_id, owner, card_id)

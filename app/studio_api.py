@@ -128,7 +128,8 @@ def register_studio(api, config, base_store, provider, owner):
                 current["structureRevision"] = state["structure"]["revision"]
             current["settings"] = new
             current["settingsRevision"] += 1
-            if state.get("image_batch", {}).get("status") == "skipped":
+            if (state.get("image_batch", {}).get("status") == "skipped" and
+                    not state["image_batch"].get("storyboardGroup")):
                 state.pop("image_batch", None)
             changed_context(state)
             store.save(state, maker, version)

@@ -59,12 +59,14 @@ OpenAI·Comfy·Turso 키는 BE 환경변수에만 넣습니다. 별도 회원가
 글 생성 후 `POST /projects/{id}/document/prepare-images`를 이어 호출합니다.
 응답은 `{document,project,generation:{status,phase,completed,total,currentCardId}}`입니다.
 
-- `running`: 같은 POST를 이어 호출합니다. 요청당 최대 카드 하나만 처리합니다.
+- `running`: 같은 POST를 이어 호출합니다. 기본 모드는 요청당 최대 카드 하나, `storyboard4` 실험은 장면 최대 4개를 함께 처리합니다.
 - `ready`: 전체 적용 완료. 최신 문서와 project를 캐시에 넣고 편집기를 엽니다.
 - `skipped`: demo 또는 그림 없음 설정. 실제 생성 성공으로 표시하지 않습니다.
 
 기본 library 모드는 GPT 선택 → 고정 캐릭터 얼굴 크롭 저장 → 인물 고정 → Qwen 장면 자동 적용 순서입니다.
 카드 표시용 얼굴과 장면 입력용 기본 포즈 원본은 서버가 구분하므로 새 FE 필드가 필요 없습니다.
+`STUDIO_SCENE_MODE=storyboard4`는 서버 설정만으로 켭니다. 응답 구조는 같고 completed가 최대 4씩 증가할 수 있습니다.
+수동 `assist/images`는 계속 카드별 후보 경로입니다. [실험 문서](STORYBOARD_EXPERIMENT.md)를 참고하세요.
 같은 캐릭터를 장면에 실제 레퍼런스로 넣지만 완벽한 얼굴 일치를 보장하지 않습니다.
 10종 후보와 자동 준비의 인물 상한 6명·장면 상한 3명은 서로 다른 수치입니다.
 

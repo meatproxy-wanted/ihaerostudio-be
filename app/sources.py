@@ -68,9 +68,10 @@ def extract_pdf(data: bytes, filename: str) -> Source:
         fail(422, "invalid_pdf", "PDF를 읽지 못했습니다. 손상 여부를 확인해주세요.")
 
 
-def clean_image(data: bytes) -> tuple[bytes, int, int]:
-    if len(data) > MAX_IMAGE_BYTES:
-        fail(413, "image_too_large", "그림은 최대 5MB입니다.")
+def clean_image(data: bytes, *, max_side=1600, max_bytes=MAX_IMAGE_BYTES) -> tuple[bytes, int, int]:
+    # Only trusted server callers override these; upload endpoints retain defaults.
+    if len(data) > max_bytes:
+        fail(413, "image_too_large", "그림 파일 용량 한도를 넘었어요.")
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error", Image.DecompressionBombWarning)
@@ -81,7 +82,7 @@ def clean_image(data: bytes) -> tuple[bytes, int, int]:
                     fail(413, "image_too_large", "그림은 최대 1,600만 화소입니다.")
                 image.load()
                 cleaned = ImageOps.exif_transpose(image).convert("RGB")
-                cleaned.thumbnail((1600, 1600))
+                cleaned.thumbnail((max_side, max_side))
                 out = io.BytesIO()
                 cleaned.save(out, "PNG")
                 return out.getvalue(), cleaned.width, cleaned.height

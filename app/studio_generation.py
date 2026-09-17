@@ -448,13 +448,13 @@ class StudioGeneration:
             with self.store.store.connect() as db:
                 db.execute("UPDATE studio_image_jobs SET lease_until=0 WHERE id=?", (job["id"],))
 
-    def download(self, asset_id, provider_id):
+    def download(self, asset_id, provider_id, *, max_side=1600, max_bytes=MAX_IMAGE_BYTES):
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", asset_id):
             raise ComfyFailure("comfy_invalid_response")
         meta = self.cloud.request("GET", ORIGIN + "/api/v2/assets/" + asset_id)
         if (meta.get("id") != asset_id or meta.get("job_id") != provider_id
                 or (meta.get("content_type") not in (None, "") and not str(meta["content_type"]).startswith("image/"))
-                or type(meta.get("size_bytes")) is not int or not 0 < meta["size_bytes"] <= MAX_IMAGE_BYTES):
+                or type(meta.get("size_bytes")) is not int or not 0 < meta["size_bytes"] <= max_bytes):
             raise ComfyFailure("comfy_invalid_response")
         url = urljoin(ORIGIN, str(meta.get("url", "")))
         parsed = urlsplit(url)
@@ -469,11 +469,11 @@ class StudioGeneration:
                     data = bytearray()
                     for chunk in response.iter_bytes():
                         data.extend(chunk)
-                        if len(data) > MAX_IMAGE_BYTES:
+                        if len(data) > max_bytes:
                             raise ComfyFailure("comfy_image_too_large")
         except httpx.HTTPError:
             raise ComfyFailure("comfy_download_failed") from None
-        return clean_image(bytes(data))[0]
+        return clean_image(bytes(data), max_side=max_side, max_bytes=max_bytes)[0]
 
     def finish(self, job, project_id, owner, image):
         state = self.store.get(project_id, owner)[0]
