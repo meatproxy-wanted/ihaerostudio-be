@@ -1,0 +1,121 @@
+{
+  "version": "stock-characters-v1",
+  "poseOrder": [
+    "listen",
+    "request",
+    "refuse",
+    "inspect"
+  ],
+  "characters": [
+    {
+      "id": "cast-01",
+      "file": "cast-01.png",
+      "description": "Adult with an oval face, short straight dark hair with a side part, clean-shaven, teal collared overshirt and navy trousers.",
+      "faceBox": [
+        0.16,
+        0,
+        0.84,
+        0.43
+      ]
+    },
+    {
+      "id": "cast-02",
+      "file": "cast-02.png",
+      "description": "Adult with a round face, shoulder-length dark bob, mustard cardigan over a cream top and charcoal trousers.",
+      "faceBox": [
+        0.16,
+        0,
+        0.84,
+        0.43
+      ]
+    },
+    {
+      "id": "cast-03",
+      "file": "cast-03-clean-v1.png",
+      "description": "Older adult with a long face, short silver hair, rectangular glasses, burgundy pullover and slate trousers.",
+      "faceBox": [
+        0.16,
+        0,
+        0.84,
+        0.43
+      ]
+    },
+    {
+      "id": "cast-04",
+      "file": "cast-04-clean-v1.png",
+      "description": "Adult with a broad face, dark curly hair in a neat high bun, lavender blouse and dark olive trousers.",
+      "faceBox": [
+        0.16,
+        0,
+        0.84,
+        0.43
+      ]
+    },
+    {
+      "id": "cast-05",
+      "file": "cast-05-clean-v1.png",
+      "description": "Adult with an angular face, short wavy brown hair, a neat short beard, rust-orange crewneck and deep brown trousers.",
+      "faceBox": [
+        0.16,
+        0,
+        0.84,
+        0.43
+      ]
+    },
+    {
+      "id": "cast-06",
+      "file": "cast-06-clean-v1.png",
+      "description": "Older adult with a soft round face, chin-length silver bob, small round glasses, sage-green cardigan and navy trousers.",
+      "faceBox": [
+        0.16,
+        0,
+        0.84,
+        0.43
+      ]
+    },
+    {
+      "id": "cast-07",
+      "file": "cast-07.png",
+      "description": "Adult with a long oval face, black hair in a low ponytail, cobalt-blue button-up shirt and beige trousers.",
+      "faceBox": [
+        0.16,
+        0,
+        0.84,
+        0.43
+      ]
+    },
+    {
+      "id": "cast-08",
+      "file": "cast-08-clean-v1.png",
+      "description": "Adult with a square face, very short dark cropped hair, clean-shaven, plum polo shirt and charcoal trousers.",
+      "faceBox": [
+        0.16,
+        0,
+        0.84,
+        0.43
+      ]
+    },
+    {
+      "id": "cast-09",
+      "file": "cast-09-clean-v1.png",
+      "description": "Adult with a heart-shaped face, short chestnut pixie hairstyle, coral-red sweater and dark navy trousers.",
+      "faceBox": [
+        0.16,
+        0,
+        0.84,
+        0.43
+      ]
+    },
+    {
+      "id": "cast-10",
+      "file": "cast-10-clean-v1.png",
+      "description": "Adult with a broad oval face, medium-length wavy black hair, clean-shaven, light denim-blue jacket over a cream shirt and dark green trousers.",
+      "faceBox": [
+        0.16,
+        0,
+        0.84,
+        0.43
+      ]
+    }
+  ]
+}

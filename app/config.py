@@ -15,6 +15,7 @@ class Config:
     openai_model: str = field(default_factory=lambda: os.getenv("OPENAI_MODEL", ""))
     openai_max_output_tokens: int = field(default_factory=lambda: int(os.getenv("OPENAI_MAX_OUTPUT_TOKENS", "16384")))
     comfy_api_key: str = field(default_factory=lambda: os.getenv("COMFY_CLOUD_API_KEY", ""), repr=False)
+    studio_character_mode: str = field(default_factory=lambda: os.getenv("STUDIO_CHARACTER_MODE", "library"))
     comfy_asset_allowed_hosts: list[str] = field(default_factory=lambda: os.getenv("COMFY_ASSET_ALLOWED_HOSTS", "cloud.comfy.org,storage.googleapis.com").split(","))
     font_path: str | None = field(default_factory=lambda: os.getenv("PDF_FONT_PATH"))
     # Remote store for hosts without a persistent disk (Vercel). Empty means the SQLite file at db_path.
@@ -28,6 +29,8 @@ class Config:
     environment: str = field(default_factory=lambda: os.getenv("APP_ENV", "development"))
 
     def __post_init__(self):
+        if self.studio_character_mode not in {"library", "generate"}:
+            raise ValueError("STUDIO_CHARACTER_MODE must be library or generate")
         self.public_base_url = self.public_base_url.strip().rstrip("/")
         if self.provider not in {"demo", "openai"}:
             raise ValueError("AI_PROVIDER must be demo or openai")

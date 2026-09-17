@@ -24,6 +24,8 @@ from .studio_characters import character_context, other_portrait_references, ref
 from .studio_identity import CharacterIdentity, PortraitComposition, identity_instructions
 from .studio_store import StudioStore, asset_size, asset_url
 from .video_models import WorkflowNode
+from .studio_library import PORTRAIT_PRESET as LIBRARY_PORTRAIT_PRESET, catalog, face_pixels
+from .studio_library_selection import LibrarySelection
 
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 WAIT_SECONDS = 90
@@ -48,13 +50,20 @@ def image_context(state, card_id, *, select_relevant=True):
             "sentences": [{"text": s["text"], "evidence": [anchor_text(state["source"], a) for a in s["anchors"]]}
                           for s in card["sentences"]]}
     # Character identities take priority when all three native input slots are used.
-    mood = style_sample() if len(references) <= 2 else None
+    library = state.get("character_library")
+    if library and card["role"] == "person" and card["partyId"] in library["bindings"]:
+        context["libraryCharacter"] = {"characterId": library["bindings"][card["partyId"]],
+                                       "version": library["version"], "digest": library["digest"]}
+    # Stock sprites already establish a common style; do not mix in unrelated people.
+    mood = style_sample() if not context.get("libraryCharacter") and not any(r.get("libraryCharacterId") for r in references) and len(references) <= 2 else None
     if mood:
         context["styleReference"] = mood
     return context
 
 
 def fingerprint(context, preset=None):
+    if preset is None and context.get("libraryCharacter"):
+        preset = LIBRARY_PORTRAIT_PRESET
     if preset is None and context.get("styleReference"):
         preset = MOOD_PORTRAIT_PRESET if context["role"] == "person" else MOOD_PRESET
     preset = preset or (PORTRAIT_PRESET if context["role"] == "person" else
@@ -76,6 +85,7 @@ class StudioGeneration:
     def __init__(self, store, config, provider):
         self.store, self.config, self.provider = store, config, provider
         self.cloud = ComfyCloud(config)
+        self.library = LibrarySelection(self)
         with store.store.connect() as db:
             db.execute("""CREATE TABLE IF NOT EXISTS studio_image_jobs (
                 id TEXT PRIMARY KEY, owner TEXT NOT NULL, project_id TEXT NOT NULL,
@@ -136,6 +146,12 @@ class StudioGeneration:
         context = image_context(state, card_id)
         if self.provider.name == "demo":
             return self.result(state)
+        if self.config.studio_character_mode == "library" or state.get("character_library"):
+            self.library.assign(project_id, owner)
+            state = self.store.get(project_id, owner)[0]
+            context = image_context(state, card_id)
+        if context.get("libraryCharacter"):
+            return self.library_portrait(project_id, owner, card_id, state, context)
         self.cloud.require_key()
         # Validate every selected reference before spending money on scene planning or generation.
         references = context["characterReferences"]
@@ -344,6 +360,9 @@ class StudioGeneration:
                 if references:
                     plan = plan.model_copy(update={"prompt": plan.prompt + identity_instructions(job["identity_profiles"]) +
                         ("\nCorrect the previous attempt's mismatches: " + job["correction"] if job.get("correction") else "")})
+                    if any(r.get("libraryCharacterId") for r in references):
+                        plan = plan.model_copy(update={"prompt": plan.prompt +
+                            " Keep the existing illustration appearance and linework of the supplied characters."})
                 if mood:
                     graph = compile_reference_image(plan, job["seed"], "ihaero-" + job["id"], filenames,
                                                     mood=mood_filename, portrait=context["role"] == "person")
@@ -413,6 +432,22 @@ class StudioGeneration:
             with self.store.store.connect() as db:
                 db.execute("UPDATE studio_image_jobs SET lease_until=0 WHERE id=?", (job["id"],))
 
+    def library_portrait(self, project_id, owner, card_id, state, context):
+        job = self.claim(project_id, owner, card_id, fingerprint(context))
+        if job["status"] == "ready":
+            return self.result(state, job["asset_id"])
+        try:
+            if context["libraryCharacter"]["digest"] != catalog()["digest"]:
+                fail(409, "character_library_changed", "이 자료의 원본 캐릭터 자산을 복원해 주세요.")
+            name = next(p["displayName"] for p in context["parties"] if p["partyId"] == context["partyId"])
+            job.update(status="planned", library_portrait=True,
+                       plan={"alt": name + "의 가상 캐릭터 얼굴 삽화", "meaning": "판결 내용을 설명하기 위한 가상의 등장인물"})
+            self.persist(job)
+            return self.finish(job, project_id, owner, face_pixels(context["libraryCharacter"]["characterId"]))
+        finally:
+            with self.store.store.connect() as db:
+                db.execute("UPDATE studio_image_jobs SET lease_until=0 WHERE id=?", (job["id"],))
+
     def download(self, asset_id, provider_id):
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", asset_id):
             raise ComfyFailure("comfy_invalid_response")
@@ -445,7 +480,7 @@ class StudioGeneration:
         context = image_context(state, job["card_id"])
         if fingerprint(context) != job["fingerprint"]:
             fail(409, "image_card_changed", "생성 중 카드 내용이 바뀌었어요. 현재 카드에서 다시 그림 후보를 확인해 주세요.")
-        if context["role"] == "person":
+        if context["role"] == "person" and not job.get("library_portrait"):
             if "portrait_composition" not in job:
                 inspection = self.provider.call(
                     "첨부된 생성 그림만 관찰하세요. personCount는 실제 보이는 사람 수입니다. 배경 인물, "
@@ -463,6 +498,9 @@ class StudioGeneration:
                 fail(422, "portrait_composition_invalid", "등장인물 그림이 한 명·빈 흰 배경 조건을 통과하지 못했어요. 적용하지 않았으며 같은 요청으로 유료 재생성을 하지 않습니다.")
         asset = {"id": job["id"], "src": asset_url(self.config.public_base_url, job["id"]),
                  "alt": job["plan"]["alt"], "meaning": job["plan"]["meaning"], "source": "library"}
+        if job.get("library_portrait"):
+            asset.update(libraryCharacterId=context["libraryCharacter"]["characterId"],
+                         libraryDigest=context["libraryCharacter"]["digest"])
         # Re-read in the transaction: generating a candidate must never overwrite an autosave.
         with self.store.store.connect() as db:
             db.execute("BEGIN IMMEDIATE")

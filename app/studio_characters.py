@@ -6,6 +6,7 @@ import hashlib
 from .sources import clean_image
 from .store import fail
 from .studio_domain import anchor_text, cards
+from .studio_library import catalog, reference_pixels
 
 MAX_REFERENCES = 6
 
@@ -53,6 +54,9 @@ def character_context(state, target, *, select_relevant=True):
                                "imageNumber": len(references) + 1, "assetId": asset["id"],
                                "digest": hashlib.sha256(asset["src"].encode()).hexdigest(),
                                "alt": image["alt"], "meaning": image["meaning"]})
+            library = state.get("character_library")
+            if library and party_id in library["bindings"] and asset.get("libraryCharacterId") == library["bindings"][party_id]:
+                references[-1].update(libraryCharacterId=library["bindings"][party_id], libraryDigest=library["digest"])
     if len(references) > MAX_REFERENCES:
         fail(422, "character_reference_limit", "프로젝트의 등장인물 기준 그림은 6개까지 사용할 수 있어요.")
     # The portrait's own saved explanation is already in the target card context.
@@ -81,6 +85,17 @@ def reference_bytes(store, state, owner, reference):
     asset = next((a for a in state["assets"] if a["id"] == reference["assetId"]), None)
     if asset is None or hashlib.sha256(asset["src"].encode()).hexdigest() != reference["digest"]:
         fail(422, "character_reference_invalid", "등장인물 기준 그림을 다시 저장해 주세요.")
+    if reference.get("libraryCharacterId"):
+        library = state.get("character_library", {})
+        if (library.get("bindings", {}).get(reference["partyId"]) != reference["libraryCharacterId"]
+                or asset.get("libraryCharacterId") != reference["libraryCharacterId"]
+                or asset.get("libraryDigest") != reference.get("libraryDigest")
+                or reference.get("libraryDigest") != library.get("digest")
+                or library.get("digest") != catalog()["digest"]):
+            fail(422, "character_reference_invalid", "고정 캐릭터 원본과 배정 정보가 맞지 않아요.")
+        # Display uses a face crop, but Qwen/identity analysis receives the full
+        # neutral figure, never a four-pose sheet or a face-only reference.
+        return reference_pixels(reference["libraryCharacterId"])
     # Compatibility with old local SQLite projects. Never fetch a document-supplied URL.
     if asset["src"].startswith("data:"):
         try:

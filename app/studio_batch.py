@@ -114,7 +114,7 @@ class StudioBatch:
                 fail(422, "invalid_party", "등장인물 카드의 partyId를 지정해 주세요.")
             if len(state["assets"]) + sum(not c["imageId"] for c in ordered) > 100:
                 fail(413, "image_limit", "모든 카드를 생성하면 그림 100개 한도를 넘어요. 프로젝트를 나눠 주세요.")
-            if any(not c["imageId"] for c in ordered):
+            if any(not c["imageId"] for c in ordered) and self.generation.config.studio_character_mode == "generate" and not state.get("character_library"):
                 self.generation.cloud.require_key()
             state["image_batch"] = {"status": "running", "targets": [c["id"] for c in ordered], "completed": []}
 
@@ -151,6 +151,9 @@ class StudioBatch:
         if not pending:
             return self.result(state)
         card_id = pending[0]
+        if self.generation.config.studio_character_mode == "library" or state.get("character_library"):
+            self.generation.library.assign(project_id, owner)
+            state = self.store.get(project_id, owner)[0]
         digest = fingerprint(image_context(state, card_id))
         try:
             result = self.generation.candidates(project_id, owner, card_id)

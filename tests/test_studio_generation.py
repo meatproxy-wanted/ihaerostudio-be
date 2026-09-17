@@ -61,6 +61,7 @@ def setup(client, monkeypatch):
     document = draft(client, project)
     card = document["sections"][0]["cards"][0]
     service = client.app.state.studio_generation
+    service.config.studio_character_mode = "generate"
     service.provider = PromptProvider()
     service.config.comfy_api_key = "private-comfy-test-key"
     service.cloud.preflight = lambda *a, **k: VideoPreflight(compatible=True, preset="test", node_count=9, issues=[])
