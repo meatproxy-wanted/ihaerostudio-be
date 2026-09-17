@@ -10,6 +10,52 @@ from app.video_workflows import validate_graph
 from test_studio_generation import client, setup, request_image, submissions, attach_characters
 
 
+@pytest.mark.parametrize("with_references", [False, True])
+@pytest.mark.parametrize("status", ["prepared", "running", "submission_unknown", "ready"])
+def test_scene_upgrade_replans_unsubmitted_but_preserves_paid_512_jobs(setup, monkeypatch, with_references, status):
+    _, service, project, _, card, control = setup
+    if with_references:
+        attach_characters(setup)
+    monkeypatch.setattr("app.studio_generation.WAIT_SECONDS", 0)
+    control["status"] = "running" if status == "running" else "succeeded"
+    control["submit_error"] = 429 if status == "prepared" else "timeout" if status == "submission_unknown" else None
+    assert request_image(setup).status_code == (200 if status == "ready" else 503)
+    context = image_context(service.store.get(project["id"], "alice")[0], card["id"])
+    old_preset = "qwen-image-edit-2511-cartoon-512-identity-v5" if with_references else "flux2-dev-cartoon-512-illustration-v5"
+    old_digest = fingerprint(context, old_preset)
+    key = "prompt" if with_references else "text"
+    with service.store.store.connect() as db:
+        job = json.loads(db.execute("SELECT body FROM studio_image_jobs").fetchone()["body"])
+        original_id = job["id"]
+        job["fingerprint"] = old_digest
+        job.pop("scene_revision", None)
+        job["plan"] = {"prompt": "Legacy portrait-like scene on a white background.", "alt": "이전 그림", "meaning": "이전 설명"}
+        job["workflow"]["4"]["inputs"][key] = "Legacy portrait-like scene on a white background."
+        original_workflow = copy.deepcopy(job["workflow"])
+        db.execute("UPDATE studio_image_jobs SET fingerprint=?,body=?,lease_until=0 WHERE id=?",
+                   (old_digest, json.dumps(job), original_id))
+    control["status"], control["submit_error"] = "succeeded", None
+    response = request_image(setup)
+    if status == "submission_unknown":
+        assert response.status_code == 503 and response.json()["detail"]["code"] == "image_submission_unknown"
+    else:
+        assert response.status_code == 200, response.text
+    updated = status in {"prepared", "ready"}
+    assert service.provider.calls == (2 if updated else 1)
+    assert len(submissions(control)) == (2 if updated else 1)
+    with service.store.store.connect() as db:
+        jobs = [json.loads(r["body"]) for r in db.execute("SELECT body FROM studio_image_jobs").fetchall()]
+    current = next(j for j in jobs if j["fingerprint"] == fingerprint(context))
+    assert (current["id"] != original_id) == (status == "ready")
+    if updated:
+        assert current["scene_revision"] == "action-staging-v1"
+        assert "Main visible action:" in current["workflow"]["4"]["inputs"][key]
+        assert current["style_revision"] == "soft-hand-drawn-cartoon-v2"
+        assert current["resolution_revision"] == "512px-v2"
+    else:
+        assert current["workflow"] == original_workflow
+
+
 def test_dev_text_generation_and_qwen_edit_receive_ordered_reference_images():
     plan = IllustrationPlan(prompt="Two anonymous adults discussing a request.", alt="대화", meaning="요청")
     graph = compile_image(plan, 42, "test")
@@ -37,6 +83,33 @@ def test_dev_text_generation_and_qwen_edit_receive_ordered_reference_images():
     assert refs["11"].inputs["steps"] == 20 and refs["11"].inputs["cfg"] == 4.0
     assert [refs[k].inputs["image"] for k in ["20", "22"]] == ["first.png", "second.png"]
     assert not any(n.class_type in {"ReferenceLatent", "ConditioningZeroOut", "LoraLoaderModelOnly"} for n in refs.values())
+
+
+def test_scene_upgrade_finds_unknown_text_job_with_unrelated_project_portraits(setup, monkeypatch):
+    _, service, project, _, card, control = setup
+    attach_characters(setup)
+    original_context = image_context
+
+    def selected_context(state, card_id, *, select_relevant=True):
+        result = original_context(state, card_id, select_relevant=select_relevant)
+        if select_relevant:
+            result["characterReferences"] = []
+            result["characters"] = []
+        return result
+
+    monkeypatch.setattr("app.studio_generation.image_context", selected_context)
+    control["submit_error"] = "timeout"
+    assert request_image(setup).status_code == 503
+    context = selected_context(service.store.get(project["id"], "alice")[0], card["id"])
+    old_digest = fingerprint(context, "flux2-dev-cartoon-512-illustration-v5")
+    with service.store.store.connect() as db:
+        job = json.loads(db.execute("SELECT body FROM studio_image_jobs").fetchone()["body"])
+        job["fingerprint"] = old_digest
+        job.pop("scene_revision", None)
+        db.execute("UPDATE studio_image_jobs SET fingerprint=?,body=?,lease_until=0 WHERE id=?",
+                   (old_digest, json.dumps(job), job["id"]))
+    assert request_image(setup).json()["detail"]["code"] == "image_submission_unknown"
+    assert service.provider.calls == 1 and len(submissions(control)) == 1
 
 
 def test_initial_portrait_uses_qwen_and_new_cache_key():

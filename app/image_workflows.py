@@ -13,8 +13,8 @@ ALLOWED = {"UNETLoader", "CLIPLoader", "VAELoader", "CLIPTextEncode", "FluxGuida
            "SamplerCustomAdvanced", "VAEDecode", "SaveImage"}
 STYLE_VERSION = "soft-hand-drawn-cartoon-v2"
 RESOLUTION_VERSION = "512px-v2"
-PRESET = "flux2-dev-cartoon-512-illustration-v5"
-REFERENCE_PRESET = "qwen-image-edit-2511-cartoon-512-identity-v5"
+PRESET = "flux2-dev-cartoon-512-action-scene-v6"
+REFERENCE_PRESET = "qwen-image-edit-2511-cartoon-512-action-scene-v6"
 PORTRAIT_PRESET = "qwen-image-2512-cartoon-solo-portrait-512-20steps-v7"
 PORTRAIT_SIZE = 512
 ILLUSTRATION_STYLE = (
@@ -79,7 +79,7 @@ def compile_portrait(illustration, seed, prefix):
 def compile_image(illustration, seed, prefix):
     def node(kind, **inputs):
         return WorkflowNode(class_type=kind, inputs=inputs)
-    prompt = ("Respectful adult educational illustration, simple drawn shapes, calm colors, white background. "
+    prompt = ("Respectful adult educational scene illustration, simple drawn shapes, calm colors. "
               "Anonymous adults, no real likeness, no letters, numbers, logos or speech text. " + illustration.prompt + VISIBLE_FACES + ILLUSTRATION_STYLE)
     graph = {
         "1": node("UNETLoader", unet_name="flux2_dev_fp8mixed.safetensors", weight_dtype="default"),
@@ -113,7 +113,9 @@ def compile_reference_image(illustration, seed, prefix, references):
     def node(kind, **inputs):
         return WorkflowNode(class_type=kind, inputs=inputs)
     pictures = ", ".join(f"Picture {i + 1}" for i in range(len(references)))
-    prompt = ("Edit the supplied character images into one respectful educational scene with a white background. "
+    prompt = ("Edit the supplied character images into one respectful educational scene. "
+              "Recompose the solo portraits into the described actions and setting, not a portrait lineup. "
+              "The reference backgrounds and poses are not scene requirements. "
               "Keep the exact illustrated people from " + pictures + ". "
               "Preserve their faces, hair, clothing and colors. Express their identity as hand-drawn cartoon characters. "
               "Change poses and the scene while keeping the illustrated characters recognizable. "

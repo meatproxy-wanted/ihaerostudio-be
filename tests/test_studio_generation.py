@@ -42,6 +42,13 @@ class PromptProvider:
         self.calls += 1
         self.context, self.task = context, task
         self.plans = getattr(self, "plans", []) + [copy.deepcopy(context)]
+        if schema.__name__ == "SceneIllustrationPlan":
+            return schema(prompt="Two anonymous adults considering the described situation; no completed payment.",
+                focalAction="The requesting person opens an empty hand toward the other person.",
+                staging="The requester stands left, the other person right, looking at each other with their hands apart.",
+                objectsAndSetting="A quiet neutral space, with no money or objects changing hands.",
+                semanticBoundary="A request is not an established event or a completed payment.",
+                alt="두 사람이 떨어져 요청 내용을 살펴보는 모습", meaning="요청과 완료를 구분한 설명")
         return schema(prompt="An anonymous adult judge explaining an order; no completed payment.",
                       alt="판사가 명령을 설명하는 모습", meaning="돈을 돌려주라는 법원의 결정")
 
@@ -473,3 +480,35 @@ def test_non_portrait_emphasizes_situation_without_visible_writing(setup):
     assert "Situation-first composition" in prompt
     assert "Absolutely no visible writing" in prompt
     assert "neutral setting when unspecified" in prompt
+
+
+@pytest.mark.parametrize("with_references", [False, True])
+def test_scene_staging_reaches_both_renderers_without_extra_ai_calls(setup, with_references):
+    _, service, project, _, _, control = setup
+    if with_references:
+        attach_characters(setup)
+    assert request_image(setup).status_code == 200
+    graph = json.loads(submissions(control)[0].content)["workflow"]
+    prompt = graph["4"]["inputs"]["prompt" if with_references else "text"]
+    assert "Main visible action: The requesting person opens an empty hand" in prompt
+    assert "Scene blocking: The requester stands left" in prompt
+    assert "Objects and setting: A quiet neutral space" in prompt
+    assert "Meaning to preserve: A request is not an established event" in prompt
+    assert "with a white background" not in prompt
+    assert "calm colors, white background" not in prompt
+    assert "# 구도 예시" in service.provider.task
+    assert "현재 사건의 사실이나 등장인물로 복사하지 마세요" in service.provider.task
+    assert "주장한 과거 사건이 실제 일어난 장면처럼 재현하지 마세요" in service.provider.task
+    assert "모든 카드를 판사나 저울로 대체하지 마세요" in service.provider.task
+    assert "role=person" not in service.provider.task
+    assert service.provider.context["sentences"][0]["evidence"]
+    assert service.provider.calls == 1 and len(submissions(control)) == 1
+    assert request_image(setup).status_code == 200
+    assert service.provider.calls == 1 and len(submissions(control)) == 1
+    if with_references:
+        assert "The reference backgrounds and poses are not scene requirements" in prompt
+        assert "re-use the exact illustrated adults" in prompt
+        assert graph["11"]["inputs"]["steps"] == 20
+    else:
+        assert graph["6"]["inputs"]["width"] == graph["6"]["inputs"]["height"] == 512
+        assert graph["9"]["inputs"]["steps"] == 20
