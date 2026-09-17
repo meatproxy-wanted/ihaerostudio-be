@@ -284,7 +284,7 @@ def test_portrait_generation_does_not_copy_other_characters(setup):
     response = client.post(path(project) + "/assist/images", json={"cardId": portraits[0]["id"]})
     graph = json.loads(submissions(control)[0].content)["workflow"]
     assert graph["1"]["inputs"]["unet_name"] == "qwen_image_2512_fp8_e4m3fn.safetensors"
-    assert graph["6"]["inputs"] == {"width": 1328, "height": 1328, "batch_size": 1}
+    assert graph["6"]["inputs"] == {"width": 768, "height": 768, "batch_size": 1}
     assert graph["7"]["inputs"]["steps"] == 20
     assert response.status_code == 200, response.text
     assert service.provider.context["characterReferences"] == []

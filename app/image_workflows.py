@@ -12,9 +12,11 @@ ALLOWED = {"UNETLoader", "CLIPLoader", "VAELoader", "CLIPTextEncode", "FluxGuida
            "EmptyFlux2LatentImage", "RandomNoise", "KSamplerSelect", "Flux2Scheduler",
            "SamplerCustomAdvanced", "VAEDecode", "SaveImage"}
 STYLE_VERSION = "strict-flat-2d-v1"
-PRESET = "flux2-dev-flat-2d-illustration-v2"
-REFERENCE_PRESET = "qwen-image-edit-2511-flat-2d-identity-v2"
-PORTRAIT_PRESET = "qwen-image-2512-flat-2d-solo-portrait-20steps-v3"
+RESOLUTION_VERSION = "768px-v1"
+PRESET = "flux2-dev-flat-2d-768-illustration-v3"
+REFERENCE_PRESET = "qwen-image-edit-2511-flat-2d-768-identity-v3"
+PORTRAIT_PRESET = "qwen-image-2512-flat-2d-solo-portrait-768-20steps-v5"
+PORTRAIT_SIZE = 768
 FLAT_STYLE = (
     " Mandatory visual style: strictly flat 2D hand-drawn educational illustration. "
     "Use clean drawn outlines, simple planar shapes and uniform solid color fills. "
@@ -50,10 +52,10 @@ VISIBLE_FACES = (
     "Anonymous means a fictional identity, not a hidden or featureless face. "
     "For scenes without people, do not add a person just to satisfy this framing instruction."
 )
-REFERENCE_ALLOWED = {"UNETLoader", "CLIPLoader", "VAELoader", "LoadImage", "FluxKontextImageScale",
+REFERENCE_ALLOWED = {"UNETLoader", "CLIPLoader", "VAELoader", "LoadImage", "FluxKontextImageScale", "ImageScaleBy",
                      "TextEncodeQwenImageEditPlus", "ModelSamplingAuraFlow", "CFGNorm", "VAEEncode",
                      "KSampler", "VAEDecode", "SaveImage"}
-WIDTH = HEIGHT = 1024
+WIDTH = HEIGHT = 768
 STEPS = 20
 
 
@@ -73,7 +75,7 @@ def compile_portrait(illustration, seed, prefix):
         "3": node("VAELoader", vae_name="qwen_image_vae.safetensors"),
         "4": node("CLIPTextEncode", clip=["2", 0], text=prompt),
         "5": node("CLIPTextEncode", clip=["2", 0], text=negative),
-        "6": node("EmptySD3LatentImage", width=1328, height=1328, batch_size=1),
+        "6": node("EmptySD3LatentImage", width=PORTRAIT_SIZE, height=PORTRAIT_SIZE, batch_size=1),
         "10": node("ModelSamplingAuraFlow", model=["1", 0], shift=3.1),
         "7": node("KSampler", model=["10", 0], positive=["4", 0], negative=["5", 0], latent_image=["6", 0], seed=seed, steps=20, cfg=4.0, sampler_name="euler", scheduler="simple", denoise=1.0),
         "8": node("VAEDecode", samples=["7", 0], vae=["3", 0]),
@@ -145,7 +147,9 @@ def compile_reference_image(illustration, seed, prefix, references):
         load, scale = str(20 + index * 2), str(21 + index * 2)
         graph[load] = node("LoadImage", image=filename)
         graph[scale] = node("FluxKontextImageScale", image=[load, 0])
-        images[f"image{index + 1}"] = [scale, 0]
+        reduced = str(30 + index)
+        graph[reduced] = node("ImageScaleBy", image=[scale, 0], upscale_method="area", scale_by=0.75)
+        images[f"image{index + 1}"] = [reduced, 0]
     graph.update({
         "4": node("TextEncodeQwenImageEditPlus", clip=["2", 0], vae=["3", 0], prompt=prompt, **images),
         "5": node("TextEncodeQwenImageEditPlus", clip=["2", 0], vae=["3", 0], prompt=FLAT_NEGATIVE, **images),
