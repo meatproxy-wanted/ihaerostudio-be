@@ -30,6 +30,8 @@
 옵트인 `storyboard4` 실험은 같은 인물 레퍼런스로 2048×2048의 2×2 시트를 생성하고
 1024×1024 컷 최대 4개를 잘라 해당 카드에 함께 적용합니다. [실험·실생성 테스트·롤백](docs/STORYBOARD_EXPERIMENT.md)을 참고하세요.
 기본값과 수동 그림 후보 API는 그대로 유지합니다.
+현재 Git 연동 Vercel 배포에서는 `vercel.json`의 비밀이 아닌 환경 플래그로 `storyboard4`를 켭니다.
+배포 후 `/health`의 `studio_scene_mode`로 확인하고, 롤백은 JSON의 값을 `single`로 바꿔 다시 푸시합니다.
 
 ## 로컬 실행
 

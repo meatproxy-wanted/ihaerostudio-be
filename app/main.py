@@ -94,7 +94,8 @@ def create_app(config: Config | None = None):
 
     @api.get("/health", include_in_schema=False)
     def health() -> dict[str, str]:
-        return {"status": "ok", "ai_provider": config.provider, "environment": config.environment, "storage": store.kind}
+        return {"status": "ok", "ai_provider": config.provider, "environment": config.environment, "storage": store.kind,
+                "studio_scene_mode": config.studio_scene_mode}
 
     register_studio(api, config, store, provider, owner)
     install_docs(api)

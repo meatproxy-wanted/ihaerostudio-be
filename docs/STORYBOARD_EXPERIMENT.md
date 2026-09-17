@@ -1,6 +1,9 @@
 # 고해상도 레퍼런스 4컷 실험 · 롤백 우선
 
 기본값은 `STUDIO_SCENE_MODE=single`입니다. 이 변경은 아직 실제 Cloud 이미지 품질이 검증된 기본 경로가 아닙니다.
+현재 Git 연동 Vercel 배포는 저장소의 `vercel.json.env.STUDIO_SCENE_MODE=storyboard4`로 실험을 켭니다.
+이 값은 비밀이 아닌 기능 플래그이며 OpenAI·Comfy·Turso 키는 저장소에 넣지 않습니다.
+main에 푸시한 뒤 자동 배포가 완료되면 `/health`의 `studio_scene_mode`가 `storyboard4`인지 확인합니다.
 실험을 켜려면 서버 환경변수를 `STUDIO_SCENE_MODE=storyboard4`로 바꾸고 재시작합니다.
 FE 변경이나 DB 마이그레이션은 없습니다. 새 장면 생성에만 영향을 주고 기존 그림을 교체하지 않습니다.
 
@@ -64,6 +67,8 @@ PYTHONPATH=. python scripts/test_storyboard_live.py --live --resume /absolute/te
 우선 아래 설정 롤백을 사용하고, 코드 전체를 되돌릴 때는 진행 중 원격 작업을 먼저 확인합니다.
 
 `STUDIO_SCENE_MODE=single`로 되돌리고 서버를 재시작합니다.
+Git 연동 Vercel 배포에서는 `vercel.json`의 해당 값을 `single`로 변경해 main에 푸시합니다.
+대시보드만 변경하면 저장소 설정이 남으므로 Git 설정도 함께 되돌려야 합니다.
 
 - **새 묶음**은 기존 카드별 생성으로 돌아갑니다. `assist/images`는 실험 전후 모두 기존 카드별 경로입니다.
 - 아직 Comfy에 제출하지 않은 유휴 묶음은 예약을 해제하고 기존 경로로 돌아갑니다. 실행 중 lease가 남으면 먼저 끝날 때까지 예약을 유지합니다.

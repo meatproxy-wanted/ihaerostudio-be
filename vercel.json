@@ -1,5 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "env": {
+    "STUDIO_SCENE_MODE": "storyboard4"
+  },
   "functions": {
     "app/main.py": {
       "maxDuration": 300,

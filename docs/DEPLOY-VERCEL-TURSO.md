@@ -18,6 +18,12 @@
 브라우저는 FE에서 BE의 `/api/studio`를 직접 호출하므로 CORS가 필요합니다.
 기본 library 모드의 캐릭터 얼굴은 번들 이미지 크롭이며 Qwen을 호출하지 않습니다.
 Qwen은 상황 그림 생성에 사용합니다.
+현재 저장소의 `vercel.json.env`는 비밀이 아닌 `STUDIO_SCENE_MODE=storyboard4`만 설정해
+Git 연동 배포에서 4컷 실험을 켭니다. 키와 다른 환경변수는 기존 프로젝트 설정을 그대로 사용합니다.
+롤백은 이 값을 `single`로 바꿔 main에 푸시합니다. 배포 후 `/health`의 `studio_scene_mode`로 실제 모드를 확인합니다.
+Vercel의 `env` 속성은 지원되지만 권장 경로는 프로젝트 설정입니다.
+이번 실험에서는 Git만으로 켜고 되돌리려는 요구에 맞춰 사용합니다.
+[공식 설정 문서](https://vercel.com/docs/project-configuration/vercel-json#env).
 
 ## 1. DB와 BE 준비
 

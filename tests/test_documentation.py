@@ -1,5 +1,6 @@
 """Keep public documentation aligned with runtime contracts and packaged assets."""
 import fnmatch
+import json
 from pathlib import Path
 import re
 import tomllib
@@ -60,3 +61,21 @@ def test_local_document_links_resolve():
                 continue
             path = target.split("#", 1)[0]
             assert (document.parent / path).exists(), (document.name, target)
+
+
+def test_git_deployment_enables_only_nonsecret_storyboard_flag():
+    deployment = json.loads((ROOT / "vercel.json").read_text())
+    assert deployment["env"] == {"STUDIO_SCENE_MODE": "storyboard4"}
+
+
+def test_health_reports_runtime_scene_mode_without_credentials(client):
+    config = client.app.state.config
+    config.studio_scene_mode = "storyboard4"
+    config.openai_api_key = "private-openai-key"
+    config.comfy_api_key = "private-comfy-key"
+    response = client.get("/health", headers={"Authorization": ""})
+    assert response.status_code == 200
+    assert response.json()["studio_scene_mode"] == "storyboard4"
+    assert "private-" not in response.text
+    config.studio_scene_mode = "single"
+    assert client.get("/health").json()["studio_scene_mode"] == "single"
