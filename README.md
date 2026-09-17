@@ -87,9 +87,14 @@ uvicorn app.main:app --host 127.0.0.1 --port 8100 --no-access-log
 FE에서 **카드 → 그림 넣기 → 그림 후보 보기 → 후보 선택 → 이 그림으로 바꾸기**를 사용합니다.
 OpenAI가 선택한 카드의 문장과 근거로 영문 장면 설명·한국어 대체텍스트 초안을 만들고,
 등장인물 초상(`role=person`)은 기존 **FLUX Schnell, 768×768, 4 steps**를 유지합니다.
-일반 장면은 **FLUX.2 Dev (FP8), 1024×1024, 20 steps**로 그림 1장을 생성합니다.
+기준 그림이 없는 일반 장면은 **FLUX.2 Dev (FP8), 1024×1024, 20 steps**로 그림 1장을 생성합니다.
 등장인물 그림을 **적용·저장한 뒤**
-결론·사건 설명 그림을 요청하면 FLUX.2 Dev가 그 그림들을 실제 레퍼런스로 사용합니다.
+결론·사건 설명 그림을 요청하면 **Qwen-Image-Edit-2511 (FP8), 20 steps, CFG 4**가
+그 인물 그림을 실제 편집 입력으로 사용합니다. 인물 외형을 유지하고 자세·장면을 바꾸도록 지시합니다.
+출력 크기·비율은 첫 참조 그림을 약 1MP로 정규화한 크기를 따릅니다(정사각형 기준 1024×1024).
+Qwen 참조 경로는 `qwen_image_edit_2511_fp8mixed.safetensors`,
+`qwen_2.5_vl_7b_fp8_scaled.safetensors`, `qwen_image_vae.safetensors`를 사용합니다.
+Lightning LoRA는 사용하지 않습니다. 실제 Cloud 모델 가용성과 인물 유지 품질은 계정으로 확인해야 합니다.
 기존 4-step 모델보다 생성 시간·GPU 사용량이 늘어날 수 있습니다. 90초 대기 후 진행 중이면
 같은 요청으로 이어서 조회하며, 업그레이드 전에 접수한 작업은 저장된 기존 워크플로우로 끝까지 확인합니다.
 이미 완료된 그림은 보관하며, 등장인물 초상의 기존 Schnell 후보도 재사용합니다.
@@ -98,7 +103,14 @@ OpenAI가 선택한 카드의 문장과 근거로 영문 장면 설명·한국�
 `full_encoder_small_decoder.safetensors`입니다.
 워크플로우는 [Comfy 공식 FLUX.2 Dev 가이드](https://docs.comfy.org/tutorials/flux/flux-2-dev)와
 공식 템플릿의 일반 Dev 경로(터보 LoRA 제외)를 기준으로 구성했습니다.
-`role=person` 카드의 `partyId`와 `imageId`를 기준으로 최대 6명의 PNG/JPEG/WebP 그림을 자동 연결합니다.
+`role=person` 카드의 `partyId`와 `imageId`로 저장된 PNG/JPEG/WebP 기준 그림을 찾습니다.
+장면 문장·근거의 이름/역할과 `partyId`를 이용해 필요한 인물을 우선 선택하고 이미지 번호를 다시 매깁니다.
+인물이 불명확하면 임의로 제외하지 않습니다. Qwen 편집은 한 장에 최대 3명의 기준 그림을 사용하며,
+그 이상이면 유료 장면 설계·생성 전에 422 `character_reference_limit`을 반환합니다.
+문서 전체의 기준 그림 상한은 기존 6개입니다. 복잡한 장면은 카드에서 인물을 명확히 하거나 나누세요.
+공식 [Qwen Edit 워크플로우](https://docs.comfy.org/tutorials/image/qwen/qwen-image-edit-2511)를 기준으로
+이미지 픽셀을 양·음성 편집 인코더와 VAE에 연결합니다. 여러 사람을 같은 얼굴로 합치거나 외형이
+변하는 문제를 완전히 보장하지 않으므로 후보를 확인한 뒤 적용하세요.
 이름·역할·등장인물 카드 설명과 대상 문장의 근거도 장면 설계에 전달하여 인물과 관계의 방향을 구분합니다.
 아직 적용하지 않은 후보는 기준으로 쓰지 않습니다. 기준 그림이 없으면 기존 텍스트 기반 생성을 사용합니다.
 초안 생성에도 동일한 partyId·이름·역할을 유지하고 등장인물별 person 카드를 작성하도록 지시합니다.

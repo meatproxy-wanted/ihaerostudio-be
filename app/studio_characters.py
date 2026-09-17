@@ -10,7 +10,7 @@ from .studio_domain import anchor_text, cards
 MAX_REFERENCES = 6
 
 
-def character_context(state, target):
+def character_context(state, target, *, select_relevant=True):
     document = state["document"]
     parties = {p["id"]: p for p in state["structure"]["parties"]}
     images = {i["id"]: i for i in document["images"]}
@@ -45,11 +45,26 @@ def character_context(state, target):
                                "digest": hashlib.sha256(asset["src"].encode()).hexdigest(),
                                "alt": image["alt"], "meaning": image["meaning"]})
     if len(references) > MAX_REFERENCES:
-        fail(422, "character_reference_limit", "한 장의 그림에는 등장인물 기준 그림을 6개까지 사용할 수 있어요.")
+        fail(422, "character_reference_limit", "프로젝트의 등장인물 기준 그림은 6개까지 사용할 수 있어요.")
     # The portrait's own saved explanation is already in the target card context.
     # Exclude other character cards so completing another portrait does not regenerate this one.
     if target["role"] == "person":
         characters = [c for c in characters if c["partyId"] == target["partyId"]]
+    elif select_relevant and references:
+        # Use explicit card identities and name/role mentions. If the card is
+        # ambiguous, retain references rather than silently guessing its actors.
+        text = " ".join(s["text"] + " " + " ".join(anchor_text(state["source"], a) for a in s["anchors"])
+                        for s in target["sentences"])
+        relevant = {target["partyId"]} if target["partyId"] else set()
+        for character in characters:
+            party = parties.get(character["partyId"], {})
+            aliases = {character["displayName"], party.get("sourceLabel", ""), party.get("legalStatus", "")}
+            if any(len(alias.strip()) >= 2 and alias.strip() in text for alias in aliases):
+                relevant.add(character["partyId"])
+        if relevant:
+            references = [r for r in references if r["partyId"] in relevant]
+            characters = [c for c in characters if c["partyId"] in relevant]
+        references = [{**r, "imageNumber": i + 1} for i, r in enumerate(references)]
     return characters, references
 
 

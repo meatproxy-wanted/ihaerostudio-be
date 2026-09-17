@@ -33,12 +33,12 @@ class IllustrationPlan(Wire):
     meaning: str = Field(min_length=1, max_length=500)
 
 
-def image_context(state, card_id):
+def image_context(state, card_id, *, select_relevant=True):
     document = require_document(state)
     card = next((c for c in cards(document) if c["id"] == card_id), None)
     if card is None:
         fail(404, "not_found", "카드를 찾을 수 없어요.")
-    characters, references = character_context(state, card)
+    characters, references = character_context(state, card, select_relevant=select_relevant)
     return {"role": card["role"], "partyId": card["partyId"],
             "parties": document["partyNames"],
             "characters": characters, "characterReferences": references,
@@ -80,21 +80,28 @@ class StudioGeneration:
             row = db.execute("""SELECT * FROM studio_image_jobs
                 WHERE owner=? AND project_id=? AND card_id=? AND fingerprint=?""",
                 (owner, project_id, card_id, digest)).fetchone()
-            if row is None and legacy_digest:
+            legacy_digests = [legacy_digest] if isinstance(legacy_digest, str) else (legacy_digest or [])
+            for old_digest in legacy_digests if row is None else []:
                 legacy = db.execute("""SELECT * FROM studio_image_jobs
                     WHERE owner=? AND project_id=? AND card_id=? AND fingerprint=?""",
-                    (owner, project_id, card_id, legacy_digest)).fetchone()
+                    (owner, project_id, card_id, old_digest)).fetchone()
                 # Preserve paid/prepared work during a model upgrade. Completed cache
-                # entries stay under the old preset; new requests may create Dev images.
+                # entries stay under the old preset; new requests use the current model.
                 if legacy:
                     old_job = json.loads(legacy["body"])
                     if old_job["status"] != "ready":
                         if legacy["lease_until"] > time.time():
                             fail(503, "image_in_progress", "그림을 생성하고 있어요. 잠시 후 같은 작업을 다시 확인해요.")
                         old_job["fingerprint"] = digest
+                        if old_job["status"] in {"pending", "planned"} or (
+                            old_job["status"] == "prepared" and time.time() - old_job.get("prepared_at", 0) > 23 * 3600):
+                            # No uncertain/accepted image submission exists. Replan
+                            # image slots if selection/model changed before submission.
+                            old_job = {"id": old_job["id"], "card_id": card_id, "status": "pending", "fingerprint": digest}
                         db.execute("UPDATE studio_image_jobs SET fingerprint=?,body=? WHERE id=?",
                                    (digest, json.dumps(old_job), old_job["id"]))
                         row = db.execute("SELECT * FROM studio_image_jobs WHERE id=?", (old_job["id"],)).fetchone()
+                        break
             if row:
                 job = json.loads(row["body"])
                 if job["status"] == "ready":
@@ -123,9 +130,17 @@ class StudioGeneration:
         # Validate every selected reference before spending money on scene planning or generation.
         references = context["characterReferences"]
         pixels = [reference_bytes(self.store, state, owner, ref) for ref in references]
-        legacy_preset = ("flux2-dev-illustration-v1" if context["role"] == "person" else
-                         "flux2-klein-9b-verified-identity-v3" if references else "flux-schnell-illustration-v2")
-        job = self.claim(project_id, owner, card_id, fingerprint(context), fingerprint(context, legacy_preset))
+        legacy_context = image_context(state, card_id, select_relevant=False)
+        if context["role"] == "person":
+            legacy_presets = ["flux2-dev-illustration-v1"]
+        elif legacy_context["characterReferences"]:
+            legacy_presets = ["flux2-dev-identity-reference-v1", "flux2-klein-9b-verified-identity-v3"]
+        else:
+            legacy_presets = ["flux-schnell-illustration-v2"]
+        legacy_digests = [fingerprint(legacy_context, p) for p in legacy_presets]
+        if legacy_context != context:
+            legacy_digests.append(fingerprint(legacy_context))
+        job = self.claim(project_id, owner, card_id, fingerprint(context), legacy_digests)
         if job["status"] == "ready":
             state = self.store.get(project_id, owner)[0]
             if fingerprint(image_context(state, card_id)) != job["fingerprint"]:
@@ -138,6 +153,8 @@ class StudioGeneration:
                 job["status"] = "succeeded"
                 self.persist(job)
             if job["status"] == "pending":
+                if len(references) > 3:
+                    fail(422, "character_reference_limit", "Qwen Edit 한 장에는 기준 인물을 3명까지 사용할 수 있어요. 인물이 명확하도록 카드를 나누거나 문장을 수정해 주세요.")
                 capacity(state)
                 if references:
                     identity = CharacterIdentity(self.store, self.provider)
@@ -157,7 +174,9 @@ class StudioGeneration:
                     "characters는 저장된 등장인물 정보입니다. partyId로 같은 인물을 연결하고 역할·행동의 주체와 대상을 바꾸지 마세요. "
                     "등장인물 설명은 정체성 참고이며 사건 사실은 대상 카드의 문장과 evidence에 근거해야 합니다. "
                     "characterReferences의 imageNumber는 실제로 전달되는 기준 그림 번호입니다. prompt에서 image 1, image 2처럼 "
-                    "번호로 해당 인물을 지칭하고 머리·옷·색 등 외형을 유지하세요. 설명과 그림이 충돌하면 외형은 기준 그림을 따릅니다. "
+                    "번호로 해당 인물을 지칭하고 머리·옷·색 등 외형을 유지하세요. 기준 그림이 있으면 이미지를 편집하는 지시로 작성하고 "
+                    "image 1의 인물 그대로 자세·배경만 변경하라고 명시하세요. 이미지마다 역할·행동을 구분하세요. "
+                    "설명과 그림이 충돌하면 외형은 기준 그림을 따릅니다. "
                     "기준 그림이 있으면 성별·나이·얼굴·의상을 새로 지정하지 말고 각 image 번호의 인물 그대로 자세·상황만 바꾸세요. "
                     "카드에 해당하지 않는 인물을 억지로 추가하거나 원문에 없는 관계를 만들지 마세요. "
                     "익명 인물은 가상의 얼굴을 뜻하며 얼굴을 숨기거나 생략하라는 뜻이 아닙니다. "

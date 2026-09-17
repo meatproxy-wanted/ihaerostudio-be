@@ -241,9 +241,11 @@ def test_saved_portraits_are_uploaded_and_condition_the_same_scene(setup):
     assert len(uploads) == 2
     assert all(b"\x89PNG" in r.content and r.headers["X-API-Key"] == "private-comfy-test-key" for r in uploads)
     graph = json.loads(submissions(control)[0].content)["workflow"]
-    assert graph["1"]["inputs"]["unet_name"] == "flux2_dev_fp8mixed.safetensors"
+    assert graph["1"]["inputs"]["unet_name"] == "qwen_image_edit_2511_fp8mixed.safetensors"
     assert [n["inputs"]["image"] for n in graph.values() if n["class_type"] == "LoadImage"] == [f"{n:064x}.png" for n in [1, 2]]
-    assert len([n for n in graph.values() if n["class_type"] == "ReferenceLatent"]) == 2
+    assert graph["4"]["class_type"] == graph["5"]["class_type"] == "TextEncodeQwenImageEditPlus"
+    assert graph["4"]["inputs"]["image1"] == graph["5"]["inputs"]["image1"]
+    assert graph["4"]["inputs"]["image2"] == graph["5"]["inputs"]["image2"]
     assert request_image(setup).json() == result.json()
     assert len(submissions(control)) == 1 and len([r for r in control["calls"] if r.url.path == "/api/upload/image"]) == 2
     # Changing the saved identity information invalidates the dependent scene cache.
