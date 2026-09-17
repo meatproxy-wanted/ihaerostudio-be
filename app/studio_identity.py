@@ -11,6 +11,11 @@ from .studio_models import Wire
 PROFILE_VERSION = "visual-identity-v2"
 
 
+class PortraitComposition(Wire):
+    personCount: int = Field(ge=0, le=100)
+    plainWhiteBackground: bool
+
+
 class CharacterAppearance(Wire):
     personCount: int = Field(ge=0, le=100)
     faceVisible: bool

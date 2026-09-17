@@ -35,30 +35,51 @@ def test_dev_text_generation_and_qwen_edit_receive_ordered_reference_images():
     assert not any(n.class_type in {"ReferenceLatent", "ConditioningZeroOut", "LoraLoaderModelOnly"} for n in refs.values())
 
 
-def test_initial_portrait_retains_original_model_and_cache_key():
-    plan = IllustrationPlan(prompt="An anonymous adult facing the viewer.", alt="인물", meaning="등장인물")
+def test_initial_portrait_uses_qwen_and_new_cache_key():
+    plan = IllustrationPlan(prompt="An anonymous adult with a clearly visible face.", alt="인물", meaning="등장인물")
     graph = compile_portrait(plan, 42, "test")
     validate_graph(graph, PORTRAIT_ALLOWED)
-    assert graph["1"].inputs["unet_name"] == "flux1-schnell.safetensors"
-    assert graph["6"].inputs == {"width": 768, "height": 768, "batch_size": 1}
-    assert graph["7"].inputs["steps"] == 4
+    assert graph["1"].inputs["unet_name"] == "qwen_image_2512_fp8_e4m3fn.safetensors"
+    assert graph["2"].inputs == {"clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors", "type": "qwen_image", "device": "default"}
+    assert graph["3"].inputs["vae_name"] == "qwen_image_vae.safetensors"
+    assert graph["6"].inputs == {"width": 1328, "height": 1328, "batch_size": 1}
+    assert graph["7"].inputs["steps"] == 50
+    assert graph["7"].inputs["cfg"] == 4.0
+    assert graph["7"].inputs["model"] == ["10", 0]
+    assert graph["10"].inputs == {"model": ["1", 0], "shift": 3.1}
     assert graph["7"].inputs["seed"] == 42
     context = {"role": "person", "characterReferences": []}
-    assert PORTRAIT_PRESET == "flux-schnell-illustration-v2"
-    assert fingerprint(context) == fingerprint(context, "flux-schnell-illustration-v2")
+    assert PORTRAIT_PRESET == "qwen-image-2512-solo-portrait-v1"
+    assert fingerprint(context) != fingerprint(context, "flux-schnell-illustration-v2")
 
 
 def test_portrait_enforces_one_person_and_empty_white_background_in_both_encoders():
     plan = IllustrationPlan(prompt="An adult at a busy office with background figures.", alt="인물", meaning="등장인물")
     graph = compile_portrait(plan, 42, "test")
     inputs = graph["4"].inputs
-    assert inputs["clip_l"] == inputs["t5xxl"]
-    prompt = inputs["t5xxl"]
+    prompt = inputs["text"]
+    assert "angle both people" not in prompt
+    assert graph["5"].class_type == "CLIPTextEncode"
+    assert "multiple people" in graph["5"].inputs["text"]
+    assert "colored background" in graph["5"].inputs["text"]
     assert "exactly one fictional adult, alone and centered" in prompt
     assert "solid pure white (#FFFFFF), empty background" in prompt
     assert "No other people, background figures" in prompt
     assert "No scenery, furniture, props, icons or background decorations" in prompt
     assert prompt.endswith("These portrait constraints override conflicting scene descriptions.")
+
+
+def test_all_image_paths_require_visible_faces_not_audience_facing():
+    plan = IllustrationPlan(prompt="An adult reading a document with a clearly visible face.", alt="인물", meaning="설명")
+    graphs = [compile_portrait(plan, 1, "test"), compile_image(plan, 1, "test"),
+              compile_reference_image(plan, 1, "test", ["person.png"])]
+    for graph in graphs:
+        prompt = graph["4"].inputs.get("text", graph["4"].inputs.get("prompt"))
+        assert "eyes, nose and mouth" in prompt
+        assert "do not require" in prompt
+        assert "Face the viewer directly" not in prompt
+        assert "angle both people" not in prompt
+        assert "three-quarter front view" not in prompt
 
 
 @pytest.mark.parametrize("count", [1, 3])
@@ -181,3 +202,41 @@ def test_qwen_upgrade_preserves_existing_dev_reference_submissions(setup, monkey
     assert (current["id"] == original_id) == (status != "ready")
     assert current["workflow"]["1"]["inputs"]["unet_name"] == (
         "qwen_image_edit_2511_fp8mixed.safetensors" if status == "ready" else "flux2_dev_fp8mixed.safetensors")
+
+
+@pytest.mark.parametrize("status", ["running", "submission_unknown", "ready"])
+def test_qwen_portrait_upgrade_preserves_paid_schnell_jobs_not_ready_cache(setup, monkeypatch, status):
+    client, service, project, _, _, control = setup
+    portrait = attach_characters(setup)[0]
+    monkeypatch.setattr("app.studio_generation.WAIT_SECONDS", 0)
+    control["status"] = "running" if status == "running" else "succeeded"
+    control["submit_error"] = "timeout" if status == "submission_unknown" else None
+    def request():
+        return client.post(f"/api/studio/projects/{project['id']}/assist/images", json={"cardId": portrait["id"]})
+    assert request().status_code == (200 if status == "ready" else 503)
+    context = image_context(service.store.get(project["id"], "alice")[0], portrait["id"])
+    old_digest = fingerprint(context, "flux-schnell-illustration-v2")
+    with service.store.store.connect() as db:
+        row = db.execute("SELECT * FROM studio_image_jobs").fetchone()
+        job = json.loads(row["body"])
+        job["fingerprint"] = old_digest
+        job["workflow"]["1"]["inputs"]["unet_name"] = "flux1-schnell.safetensors"
+        job.pop("portrait_composition", None)
+        original_id = job["id"]
+        db.execute("UPDATE studio_image_jobs SET fingerprint=?,body=?,lease_until=0 WHERE id=?",
+                   (old_digest, json.dumps(job), original_id))
+    control["status"], control["submit_error"] = "succeeded", None
+    response = request()
+    if status == "submission_unknown":
+        assert response.json()["detail"]["code"] == "image_submission_unknown"
+        assert not getattr(service.provider, "portrait_validation_calls", 0)
+    else:
+        assert response.status_code == 200, response.text
+        assert service.provider.portrait_validation_calls == (2 if status == "ready" else 1)
+    assert len(submissions(control)) == (2 if status == "ready" else 1)
+    with service.store.store.connect() as db:
+        rows = db.execute("SELECT body FROM studio_image_jobs").fetchall()
+        current = next(json.loads(r["body"]) for r in rows if json.loads(r["body"])["fingerprint"] == fingerprint(context))
+    assert (current["id"] == original_id) == (status != "ready")
+    assert current["workflow"]["1"]["inputs"]["unet_name"] == (
+        "qwen_image_2512_fp8_e4m3fn.safetensors" if status == "ready" else "flux1-schnell.safetensors")

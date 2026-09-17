@@ -2,6 +2,7 @@ import copy
 import json
 
 import pytest
+from fastapi import HTTPException
 
 from app.studio_domain import cards
 from app.studio_generation import StudioGeneration
@@ -43,7 +44,7 @@ def test_editor_preparation_generates_portraits_first_then_reference_scenes(setu
     assert result["generation"] == {"status": "ready", "phase": "complete", "completed": len(cards(before)),
                                      "total": len(cards(before)), "currentCardId": None}
     graphs = [json.loads(r.content)["workflow"] for r in submissions(control)]
-    assert [g["1"]["inputs"]["unet_name"] for g in graphs[:2]] == ["flux1-schnell.safetensors"] * 2
+    assert [g["1"]["inputs"]["unet_name"] for g in graphs[:2]] == ["qwen_image_2512_fp8_e4m3fn.safetensors"] * 2
     assert all(g["1"]["inputs"]["unet_name"] == "qwen_image_edit_2511_fp8mixed.safetensors" for g in graphs[2:])
     assert all(c["imageId"] for c in cards(result["document"]))
     assert result["document"]["saveRevision"] == before["saveRevision"] + len(graphs)
@@ -77,7 +78,42 @@ def test_older_drafts_gain_portrait_cards_before_scene_generation(setup):
     people = [c for c in cards(result["document"]) if c["role"] == "person"]
     assert len(people) == len(document["partyNames"])
     assert people[0]["imageId"] and people[1]["imageId"] is None
-    assert json.loads(submissions(control)[0].content)["workflow"]["1"]["inputs"]["unet_name"] == "flux1-schnell.safetensors"
+    assert json.loads(submissions(control)[0].content)["workflow"]["1"]["inputs"]["unet_name"] == "qwen_image_2512_fp8_e4m3fn.safetensors"
+
+
+@pytest.mark.parametrize("count,white", [(0, True), (2, True), (1, False)])
+def test_invalid_portrait_is_not_applied_or_recharged(setup, count, white):
+    client, service, project, _, _, control = setup
+    portraits, _ = portrait_targets(setup)
+    before = service.store.get(project["id"], "alice")[0]
+    service.provider.portrait_person_count = count
+    service.provider.portrait_white_background = white
+    for _ in range(2):
+        response = preparation(setup)
+        assert response.status_code == 422, response.text
+        assert response.json()["detail"]["code"] == "portrait_composition_invalid"
+    state = service.store.get(project["id"], "alice")[0]
+    assert len(state["assets"]) == len(before["assets"])
+    assert not state.get("locked_portraits")
+    assert next(c for c in cards(state["document"]) if c["id"] == portraits[0]["id"])["imageId"] is None
+    assert len(submissions(control)) == 1
+    assert service.provider.portrait_validation_calls == 1
+    restarted = StudioGeneration(service.store, service.config, service.provider)
+    with pytest.raises(HTTPException) as error:
+        restarted.candidates(project["id"], "alice", portraits[0]["id"])
+    assert error.value.detail["code"] == "portrait_composition_invalid"
+    assert len(submissions(control)) == 1
+
+
+def test_portrait_inspection_outage_retries_inspection_not_paid_generation(setup):
+    _, service, _, _, _, control = setup
+    portrait_targets(setup)
+    service.provider.portrait_inspection_failed = True
+    assert preparation(setup).status_code == 502
+    service.provider.portrait_inspection_failed = False
+    assert preparation(setup).json()["generation"]["completed"] == 1
+    assert service.provider.portrait_validation_calls == 2
+    assert len(submissions(control)) == 1
 
 
 def test_unknown_batch_submission_stops_without_paid_retry(setup):

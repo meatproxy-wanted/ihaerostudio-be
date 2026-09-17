@@ -18,6 +18,13 @@ class PromptProvider:
     calls = 0
 
     def call(self, task, context, schema, *, images=()):
+        if schema.__name__ == "PortraitComposition":
+            self.portrait_validation_calls = getattr(self, "portrait_validation_calls", 0) + 1
+            assert len(images) == 1 and images[0].startswith(b"\x89PNG")
+            if getattr(self, "portrait_inspection_failed", False):
+                raise HTTPException(502, {"code": "ai_unavailable", "message": "이미지 분석 실패"})
+            return schema(personCount=getattr(self, "portrait_person_count", 1),
+                          plainWhiteBackground=getattr(self, "portrait_white_background", True))
         if schema.__name__ == "CharacterAppearance":
             self.profile_calls = getattr(self, "profile_calls", 0) + 1
             assert len(images) == 1 and images[0].startswith(b"\x89PNG")
@@ -275,9 +282,9 @@ def test_portrait_generation_does_not_copy_other_characters(setup):
     portraits = attach_characters(setup)
     response = client.post(path(project) + "/assist/images", json={"cardId": portraits[0]["id"]})
     graph = json.loads(submissions(control)[0].content)["workflow"]
-    assert graph["1"]["inputs"]["unet_name"] == "flux1-schnell.safetensors"
-    assert graph["6"]["inputs"] == {"width": 768, "height": 768, "batch_size": 1}
-    assert graph["7"]["inputs"]["steps"] == 4
+    assert graph["1"]["inputs"]["unet_name"] == "qwen_image_2512_fp8_e4m3fn.safetensors"
+    assert graph["6"]["inputs"] == {"width": 1328, "height": 1328, "batch_size": 1}
+    assert graph["7"]["inputs"]["steps"] == 50
     assert response.status_code == 200, response.text
     assert service.provider.context["characterReferences"] == []
     assert [c["partyId"] for c in service.provider.context["characters"]] == [portraits[0]["partyId"]]
@@ -288,6 +295,7 @@ def test_portrait_generation_does_not_copy_other_characters(setup):
     assert client.put(path(project) + "/document", json=latest).status_code == 200
     assert client.post(path(project) + "/assist/images", json={"cardId": portraits[0]["id"]}).json() == response.json()
     assert len(submissions(control)) == 1
+    assert service.provider.portrait_validation_calls == 1
 
 
 def test_reference_must_belong_to_the_same_project_and_owner(setup):
