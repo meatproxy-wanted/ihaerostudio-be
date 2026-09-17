@@ -132,11 +132,11 @@ class StudioGeneration:
         pixels = [reference_bytes(self.store, state, owner, ref) for ref in references]
         legacy_context = image_context(state, card_id, select_relevant=False)
         if context["role"] == "person":
-            legacy_presets = ["qwen-image-2512-flat-2d-solo-portrait-1024-20steps-v4", "qwen-image-2512-flat-2d-solo-portrait-20steps-v3", "qwen-image-2512-solo-portrait-20steps-v2", "qwen-image-2512-solo-portrait-v1", "flux-schnell-illustration-v2", "flux2-dev-illustration-v1"]
+            legacy_presets = ["qwen-image-2512-cartoon-solo-portrait-768-20steps-v6", "qwen-image-2512-flat-2d-solo-portrait-768-20steps-v5", "qwen-image-2512-flat-2d-solo-portrait-1024-20steps-v4", "qwen-image-2512-flat-2d-solo-portrait-20steps-v3", "qwen-image-2512-solo-portrait-20steps-v2", "qwen-image-2512-solo-portrait-v1", "flux-schnell-illustration-v2", "flux2-dev-illustration-v1"]
         elif legacy_context["characterReferences"]:
-            legacy_presets = ["qwen-image-edit-2511-flat-2d-identity-v2", "qwen-image-edit-2511-identity-v1", "flux2-dev-identity-reference-v1", "flux2-klein-9b-verified-identity-v3"]
+            legacy_presets = ["qwen-image-edit-2511-cartoon-768-identity-v4", "qwen-image-edit-2511-flat-2d-768-identity-v3", "qwen-image-edit-2511-flat-2d-identity-v2", "qwen-image-edit-2511-identity-v1", "flux2-dev-identity-reference-v1", "flux2-klein-9b-verified-identity-v3"]
         else:
-            legacy_presets = ["flux2-dev-flat-2d-illustration-v2", "flux2-dev-illustration-v1", "flux-schnell-illustration-v2"]
+            legacy_presets = ["flux2-dev-cartoon-768-illustration-v4", "flux2-dev-flat-2d-768-illustration-v3", "flux2-dev-flat-2d-illustration-v2", "flux2-dev-illustration-v1", "flux-schnell-illustration-v2"]
         legacy_digests = [fingerprint(legacy_context, p) for p in legacy_presets]
         if legacy_context != context:
             legacy_digests.append(fingerprint(legacy_context))

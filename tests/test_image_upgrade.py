@@ -17,8 +17,8 @@ def test_dev_text_generation_and_qwen_edit_receive_ordered_reference_images():
     assert graph["1"].inputs["unet_name"] == "flux2_dev_fp8mixed.safetensors"
     assert graph["2"].inputs["clip_name"] == "mistral_3_small_flux2_bf16.safetensors"
     assert graph["3"].inputs["vae_name"] == "full_encoder_small_decoder.safetensors"
-    assert graph["9"].inputs == {"steps": 20, "width": 768, "height": 768}
-    assert graph["6"].inputs == {"width": 768, "height": 768, "batch_size": 1}
+    assert graph["9"].inputs == {"steps": 20, "width": 512, "height": 512}
+    assert graph["6"].inputs == {"width": 512, "height": 512, "batch_size": 1}
     assert graph["6"].inputs["batch_size"] == 1
     assert graph["5"].inputs["guidance"] == 4.0
     refs = compile_reference_image(plan, 42, "test", ["first.png", "second.png"])
@@ -32,8 +32,8 @@ def test_dev_text_generation_and_qwen_edit_receive_ordered_reference_images():
         assert "image3" not in refs[key].inputs
     assert refs["6"].inputs["pixels"] == ["30", 0]
     assert refs["30"].class_type == refs["31"].class_type == "ImageScaleBy"
-    assert refs["30"].inputs == {"image": ["21", 0], "upscale_method": "area", "scale_by": 0.75}
-    assert refs["31"].inputs == {"image": ["23", 0], "upscale_method": "area", "scale_by": 0.75}
+    assert refs["30"].inputs == {"image": ["21", 0], "upscale_method": "area", "scale_by": 0.5}
+    assert refs["31"].inputs == {"image": ["23", 0], "upscale_method": "area", "scale_by": 0.5}
     assert refs["11"].inputs["steps"] == 20 and refs["11"].inputs["cfg"] == 4.0
     assert [refs[k].inputs["image"] for k in ["20", "22"]] == ["first.png", "second.png"]
     assert not any(n.class_type in {"ReferenceLatent", "ConditioningZeroOut", "LoraLoaderModelOnly"} for n in refs.values())
@@ -46,14 +46,16 @@ def test_initial_portrait_uses_qwen_and_new_cache_key():
     assert graph["1"].inputs["unet_name"] == "qwen_image_2512_fp8_e4m3fn.safetensors"
     assert graph["2"].inputs == {"clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors", "type": "qwen_image", "device": "default"}
     assert graph["3"].inputs["vae_name"] == "qwen_image_vae.safetensors"
-    assert graph["6"].inputs == {"width": 768, "height": 768, "batch_size": 1}
+    assert graph["6"].inputs == {"width": 512, "height": 512, "batch_size": 1}
     assert graph["7"].inputs["steps"] == 20
     assert graph["7"].inputs["cfg"] == 4.0
     assert graph["7"].inputs["model"] == ["10", 0]
     assert graph["10"].inputs == {"model": ["1", 0], "shift": 3.1}
     assert graph["7"].inputs["seed"] == 42
     context = {"role": "person", "characterReferences": []}
-    assert PORTRAIT_PRESET == "qwen-image-2512-flat-2d-solo-portrait-768-20steps-v5"
+    assert PORTRAIT_PRESET == "qwen-image-2512-cartoon-solo-portrait-512-20steps-v7"
+    assert fingerprint(context) != fingerprint(context, "qwen-image-2512-cartoon-solo-portrait-768-20steps-v6")
+    assert fingerprint(context) != fingerprint(context, "qwen-image-2512-flat-2d-solo-portrait-768-20steps-v5")
     assert fingerprint(context) != fingerprint(context, "qwen-image-2512-flat-2d-solo-portrait-20steps-v3")
     assert fingerprint(context) != fingerprint(context, "qwen-image-2512-solo-portrait-20steps-v2")
     assert fingerprint(context) != fingerprint(context, "qwen-image-2512-solo-portrait-v1")
@@ -89,23 +91,24 @@ def test_all_image_paths_require_visible_faces_not_audience_facing():
         assert "three-quarter front view" not in prompt
 
 
-def test_all_image_paths_enforce_flat_2d_even_with_conflicting_scene_style():
-    plan = IllustrationPlan(prompt="A glossy 3D clay-rendered adult in a cinematic 2.5D scene.", alt="인물", meaning="설명")
+def test_all_image_paths_use_soft_cartoon_style_without_strict_2d_constraints():
+    plan = IllustrationPlan(prompt="An adult considering a court order.", alt="인물", meaning="설명")
     graphs = [compile_portrait(plan, 1, "test"), compile_image(plan, 1, "test"),
               compile_reference_image(plan, 1, "test", ["person.png"])]
     for graph in graphs:
         prompt = graph["4"].inputs.get("text", graph["4"].inputs.get("prompt"))
-        assert prompt.index("Mandatory visual style") > prompt.index(plan.prompt)
-        assert "strictly flat 2D hand-drawn" in prompt
-        assert "uniform solid color fills" in prompt
-        assert "No 3D or 2.5D appearance" in prompt
-        assert "overrides conflicting style descriptions" in prompt
-        assert "ambient occlusion" in prompt and "gradients" in prompt
+        assert prompt.index("Overall style") > prompt.index(plan.prompt)
+        assert "warm hand-drawn cartoon illustration" in prompt
+        assert "simplified fictional characters" in prompt
+        assert "Gentle shading is welcome" in prompt
+        assert "not a photograph" in prompt
+        for removed in ("strictly flat", "uniform solid color fills", "No 3D", "2.5D", "ambient occlusion", "no gradients"):
+            assert removed not in prompt
     for graph in (graphs[0], graphs[2]):
         negative = graph["5"].inputs.get("text", graph["5"].inputs.get("prompt"))
-        assert "3D, 2.5D" in negative
-        assert "clay render" in negative and "volume shading" in negative
-    assert "Preserve their faces, hair, clothing, colors and drawing style" not in graphs[2]["4"].inputs["prompt"]
+        assert "photograph" in negative and "photorealistic" in negative and "skin pores" in negative
+        for removed in ("3D", "2.5D", "clay render", "volume shading", "gradients", "ambient occlusion"):
+            assert removed not in negative
 
 
 @pytest.mark.parametrize("count", [1, 3])
@@ -116,7 +119,7 @@ def test_qwen_edit_only_connects_supplied_image_slots(count):
         image_inputs = {k: v for k, v in graph[key].inputs.items() if k.startswith("image")}
         assert image_inputs == {f"image{n + 1}": [str(30 + n), 0] for n in range(count)}
         for n in range(count):
-            assert graph[str(30 + n)].inputs == {"image": [str(21 + n * 2), 0], "upscale_method": "area", "scale_by": 0.75}
+            assert graph[str(30 + n)].inputs == {"image": [str(21 + n * 2), 0], "upscale_method": "area", "scale_by": 0.5}
     assert f"Picture {count}" in graph["4"].inputs["prompt"]
     assert f"Picture {count + 1}" not in graph["4"].inputs["prompt"]
 
@@ -276,15 +279,21 @@ def test_qwen_portrait_upgrade_preserves_paid_jobs_not_ready_cache(setup, monkey
 
 
 @pytest.mark.parametrize("kind,old_preset", [
+    ("portrait", "qwen-image-2512-cartoon-solo-portrait-768-20steps-v6"),
+    ("portrait", "qwen-image-2512-flat-2d-solo-portrait-768-20steps-v5"),
     ("portrait", "qwen-image-2512-flat-2d-solo-portrait-1024-20steps-v4"),
     ("portrait", "qwen-image-2512-flat-2d-solo-portrait-20steps-v3"),
     ("portrait", "qwen-image-2512-solo-portrait-20steps-v2"),
     ("text", "flux2-dev-illustration-v1"),
+    ("text", "flux2-dev-cartoon-768-illustration-v4"),
+    ("text", "flux2-dev-flat-2d-768-illustration-v3"),
     ("text", "flux2-dev-flat-2d-illustration-v2"),
     ("reference", "qwen-image-edit-2511-flat-2d-identity-v2"),
+    ("reference", "qwen-image-edit-2511-cartoon-768-identity-v4"),
+    ("reference", "qwen-image-edit-2511-flat-2d-768-identity-v3"),
     ("reference", "qwen-image-edit-2511-identity-v1")])
 @pytest.mark.parametrize("status", ["running", "submission_unknown", "ready", "prepared"])
-def test_flat_style_upgrade_preserves_paid_jobs_rebuilds_unsubmitted_only(setup, monkeypatch, kind, old_preset, status):
+def test_style_upgrade_preserves_paid_jobs_rebuilds_unsubmitted_only(setup, monkeypatch, kind, old_preset, status):
     client, service, project, _, card, control = setup
     if kind != "text":
         portraits = attach_characters(setup)
@@ -305,18 +314,22 @@ def test_flat_style_upgrade_preserves_paid_jobs_rebuilds_unsubmitted_only(setup,
         job["fingerprint"] = old_digest
         job.pop("style_revision", None)
         job.pop("resolution_revision", None)
+        if "768" in old_preset:
+            job["resolution_revision"] = "768px-v1"
+            job["style_revision"] = "soft-hand-drawn-cartoon-v2" if "cartoon" in old_preset else "strict-flat-2d-v1"
         key = "prompt" if kind == "reference" else "text"
         job["workflow"]["4"]["inputs"][key] = "Legacy dimensional style"
         if kind == "portrait":
-            old_size = 1024 if "1024" in old_preset else 1328
+            old_size = 768 if "768" in old_preset else 1024 if "1024" in old_preset else 1328
             job["workflow"]["6"]["inputs"].update(width=old_size, height=old_size)
             if "flat-2d" in old_preset:
-                # This preset already has current style and steps: only size is stale.
+                # Previous 2D revision; resolution/steps may already match.
                 job["style_revision"] = "strict-flat-2d-v1"
         elif kind == "text":
-            job["workflow"]["6"]["inputs"].update(width=1024, height=1024)
-            job["workflow"]["9"]["inputs"].update(width=1024, height=1024)
-        else:
+            old_size = 768 if "768" in old_preset else 1024
+            job["workflow"]["6"]["inputs"].update(width=old_size, height=old_size)
+            job["workflow"]["9"]["inputs"].update(width=old_size, height=old_size)
+        elif "768" not in old_preset:
             for index in range(3):
                 job["workflow"].pop(str(30 + index), None)
                 for encoder in ("4", "5"):
@@ -324,6 +337,10 @@ def test_flat_style_upgrade_preserves_paid_jobs_rebuilds_unsubmitted_only(setup,
                     if slot in job["workflow"][encoder]["inputs"]:
                         job["workflow"][encoder]["inputs"][slot] = [str(21 + index * 2), 0]
             job["workflow"]["6"]["inputs"]["pixels"] = ["21", 0]
+        else:
+            for index in range(3):
+                if node := job["workflow"].get(str(30 + index)):
+                    node["inputs"]["scale_by"] = 0.75
         db.execute("UPDATE studio_image_jobs SET fingerprint=?,body=?,lease_until=0 WHERE id=?",
                    (old_digest, json.dumps(job), original_id))
     control["status"], control["submit_error"] = "succeeded", None
@@ -338,12 +355,14 @@ def test_flat_style_upgrade_preserves_paid_jobs_rebuilds_unsubmitted_only(setup,
     current = next(j for j in jobs if j["fingerprint"] == fingerprint(context))
     assert (current["id"] != original_id) == (status == "ready")
     prompt = current["workflow"]["4"]["inputs"][key]
-    assert ("strictly flat 2D" in prompt) == (status in {"ready", "prepared"})
+    assert ("warm hand-drawn cartoon" in prompt) == (status in {"ready", "prepared"})
     if kind == "portrait":
-        size = 768 if status in {"ready", "prepared"} else old_size
+        size = 512 if status in {"ready", "prepared"} else old_size
         assert current["workflow"]["6"]["inputs"] == {"width": size, "height": size, "batch_size": 1}
     elif kind == "text":
-        size = 768 if status in {"ready", "prepared"} else 1024
+        size = 512 if status in {"ready", "prepared"} else old_size
         assert current["workflow"]["6"]["inputs"]["width"] == current["workflow"]["9"]["inputs"]["width"] == size
     else:
-        assert ("30" in current["workflow"]) == (status in {"ready", "prepared"})
+        assert ("30" in current["workflow"]) == (status in {"ready", "prepared"} or "768" in old_preset)
+        if "30" in current["workflow"]:
+            assert current["workflow"]["30"]["inputs"]["scale_by"] == (0.5 if status in {"ready", "prepared"} else 0.75)
