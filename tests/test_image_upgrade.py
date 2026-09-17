@@ -55,7 +55,7 @@ def test_scene_upgrade_replans_unsubmitted_but_preserves_paid_512_jobs(setup, mo
         assert current["scene_revision"] == "action-staging-v1"
         assert "Main visible action:" in current["workflow"]["4"]["inputs"][key]
         assert current["style_revision"] == STYLE_VERSION
-        assert current["resolution_revision"] == "512px-v2"
+        assert current["resolution_revision"] == "768px-v3"
     else:
         assert current["workflow"] == original_workflow
 
@@ -67,8 +67,8 @@ def test_dev_text_generation_and_qwen_edit_receive_ordered_reference_images():
     assert graph["1"].inputs["unet_name"] == "flux2_dev_fp8mixed.safetensors"
     assert graph["2"].inputs["clip_name"] == "mistral_3_small_flux2_bf16.safetensors"
     assert graph["3"].inputs["vae_name"] == "full_encoder_small_decoder.safetensors"
-    assert graph["9"].inputs == {"steps": 20, "width": 512, "height": 512}
-    assert graph["6"].inputs == {"width": 512, "height": 512, "batch_size": 1}
+    assert graph["9"].inputs == {"steps": 20, "width": 768, "height": 768}
+    assert graph["6"].inputs == {"width": 768, "height": 768, "batch_size": 1}
     assert graph["6"].inputs["batch_size"] == 1
     assert graph["5"].inputs["guidance"] == 4.0
     refs = compile_reference_image(plan, 42, "test", ["first.png", "second.png"])
@@ -82,8 +82,8 @@ def test_dev_text_generation_and_qwen_edit_receive_ordered_reference_images():
         assert "image3" not in refs[key].inputs
     assert refs["6"].inputs["pixels"] == ["30", 0]
     assert refs["30"].class_type == refs["31"].class_type == "ImageScaleBy"
-    assert refs["30"].inputs == {"image": ["21", 0], "upscale_method": "area", "scale_by": 0.5}
-    assert refs["31"].inputs == {"image": ["23", 0], "upscale_method": "area", "scale_by": 0.5}
+    assert refs["30"].inputs == {"image": ["21", 0], "upscale_method": "area", "scale_by": 0.75}
+    assert refs["31"].inputs == {"image": ["23", 0], "upscale_method": "area", "scale_by": 0.75}
     assert refs["11"].inputs["steps"] == 40 and refs["11"].inputs["cfg"] == 4.0
     assert [refs[k].inputs["image"] for k in ["20", "22"]] == ["first.png", "second.png"]
     assert not any(n.class_type in {"ReferenceLatent", "ConditioningZeroOut", "LoraLoaderModelOnly"} for n in refs.values())
@@ -177,14 +177,14 @@ def test_initial_portrait_uses_qwen_and_new_cache_key():
     assert graph["1"].inputs["unet_name"] == "qwen_image_2512_fp8_e4m3fn.safetensors"
     assert graph["2"].inputs == {"clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors", "type": "qwen_image", "device": "default"}
     assert graph["3"].inputs["vae_name"] == "qwen_image_vae.safetensors"
-    assert graph["6"].inputs == {"width": 512, "height": 512, "batch_size": 1}
+    assert graph["6"].inputs == {"width": 768, "height": 768, "batch_size": 1}
     assert graph["7"].inputs["steps"] == 20
     assert graph["7"].inputs["cfg"] == 4.0
     assert graph["7"].inputs["model"] == ["10", 0]
     assert graph["10"].inputs == {"model": ["1", 0], "shift": 3.1}
     assert graph["7"].inputs["seed"] == 42
     context = {"role": "person", "characterReferences": []}
-    assert PORTRAIT_PRESET == "qwen-image-2512-animation-solo-portrait-512-20steps-v8"
+    assert PORTRAIT_PRESET == "qwen-image-2512-animation-solo-portrait-768-20steps-v9"
     assert fingerprint(context) != fingerprint(context, "qwen-image-2512-cartoon-solo-portrait-768-20steps-v6")
     assert fingerprint(context) != fingerprint(context, "qwen-image-2512-flat-2d-solo-portrait-768-20steps-v5")
     assert fingerprint(context) != fingerprint(context, "qwen-image-2512-flat-2d-solo-portrait-20steps-v3")
@@ -248,7 +248,7 @@ def test_qwen_edit_only_connects_supplied_image_slots(count):
         image_inputs = {k: v for k, v in graph[key].inputs.items() if k.startswith("image")}
         assert image_inputs == {f"image{n + 1}": [str(30 + n), 0] for n in range(count)}
         for n in range(count):
-            assert graph[str(30 + n)].inputs == {"image": [str(21 + n * 2), 0], "upscale_method": "area", "scale_by": 0.5}
+            assert graph[str(30 + n)].inputs == {"image": [str(21 + n * 2), 0], "upscale_method": "area", "scale_by": 0.75}
     assert f"Picture {count}" in graph["4"].inputs["prompt"]
     assert f"Picture {count + 1}" not in graph["4"].inputs["prompt"]
 
@@ -492,12 +492,12 @@ def test_style_upgrade_preserves_paid_jobs_rebuilds_unsubmitted_only(setup, monk
     prompt = current["workflow"]["4"]["inputs"][key]
     assert (ILLUSTRATION_STYLE.strip() in prompt) == (status in {"ready", "prepared"})
     if kind == "portrait":
-        size = 512 if status in {"ready", "prepared"} else old_size
+        size = 768 if status in {"ready", "prepared"} else old_size
         assert current["workflow"]["6"]["inputs"] == {"width": size, "height": size, "batch_size": 1}
     elif kind == "text":
-        size = 512 if status in {"ready", "prepared"} else old_size
+        size = 768 if status in {"ready", "prepared"} else old_size
         assert current["workflow"]["6"]["inputs"]["width"] == current["workflow"]["9"]["inputs"]["width"] == size
     else:
         assert ("30" in current["workflow"]) == (status in {"ready", "prepared"} or "768" in old_preset)
         if "30" in current["workflow"]:
-            assert current["workflow"]["30"]["inputs"]["scale_by"] == (0.5 if status in {"ready", "prepared"} else 0.75)
+            assert current["workflow"]["30"]["inputs"]["scale_by"] == 0.75

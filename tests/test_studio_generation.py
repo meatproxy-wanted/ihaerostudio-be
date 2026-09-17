@@ -293,7 +293,7 @@ def test_portrait_generation_does_not_copy_other_characters(setup):
     response = client.post(path(project) + "/assist/images", json={"cardId": portraits[0]["id"]})
     graph = json.loads(submissions(control)[0].content)["workflow"]
     assert graph["1"]["inputs"]["unet_name"] == "qwen_image_2512_fp8_e4m3fn.safetensors"
-    assert graph["6"]["inputs"] == {"width": 512, "height": 512, "batch_size": 1}
+    assert graph["6"]["inputs"] == {"width": 768, "height": 768, "batch_size": 1}
     assert graph["7"]["inputs"]["steps"] == 20
     assert response.status_code == 200, response.text
     assert service.provider.context["characterReferences"] == []
@@ -512,7 +512,7 @@ def test_scene_staging_reaches_both_renderers_without_extra_ai_calls(setup, with
         assert "re-use the same adults" in prompt
         assert graph["11"]["inputs"]["steps"] == 40
     else:
-        assert graph["6"]["inputs"]["width"] == graph["6"]["inputs"]["height"] == 512
+        assert graph["6"]["inputs"]["width"] == graph["6"]["inputs"]["height"] == 768
         assert graph["9"]["inputs"]["steps"] == 20
 
 

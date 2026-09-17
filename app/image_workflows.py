@@ -13,13 +13,13 @@ ALLOWED = {"UNETLoader", "CLIPLoader", "VAELoader", "CLIPTextEncode", "FluxGuida
            "EmptyFlux2LatentImage", "RandomNoise", "KSamplerSelect", "Flux2Scheduler",
            "SamplerCustomAdvanced", "VAEDecode", "SaveImage"}
 STYLE_VERSION = "simple-animation-illustration-v3"
-RESOLUTION_VERSION = "512px-v2"
-PRESET = "flux2-dev-animation-512-action-scene-v7"
-REFERENCE_PRESET = "qwen-image-edit-2511-animation-512-40steps-action-scene-v8"
-MOOD_PRESET = "qwen-image-edit-2511-light-mood-512-40steps-scene-v1"
-MOOD_PORTRAIT_PRESET = "qwen-image-edit-2511-light-mood-512-40steps-portrait-v1"
-PORTRAIT_PRESET = "qwen-image-2512-animation-solo-portrait-512-20steps-v8"
-PORTRAIT_SIZE = 512
+RESOLUTION_VERSION = "768px-v3"
+PRESET = "flux2-dev-animation-768-action-scene-v8"
+REFERENCE_PRESET = "qwen-image-edit-2511-animation-768-40steps-action-scene-v9"
+MOOD_PRESET = "qwen-image-edit-2511-light-mood-768-40steps-scene-v2"
+MOOD_PORTRAIT_PRESET = "qwen-image-edit-2511-light-mood-768-40steps-portrait-v2"
+PORTRAIT_PRESET = "qwen-image-2512-animation-solo-portrait-768-20steps-v9"
+PORTRAIT_SIZE = 768
 ILLUSTRATION_STYLE = "Simple animation-style image or illustration. "
 PLANNING_STYLE_INSTRUCTION = (
     "그림체 요구는 'Simple animation-style image or illustration.'입니다. "
@@ -49,7 +49,7 @@ REFERENCE_ALLOWED = {"UNETLoader", "CLIPLoader", "VAELoader", "LoadImage", "Flux
                      "TextEncodeQwenImageEditPlus", "ModelSamplingAuraFlow", "CFGNorm", "VAEEncode",
                      "KSampler", "VAEDecode", "SaveImage"}
 MOOD_ALLOWED = REFERENCE_ALLOWED | {"EmptySD3LatentImage"}
-WIDTH = HEIGHT = 512
+WIDTH = HEIGHT = 768
 STEPS = 20
 REFERENCE_STEPS = 40
 
@@ -155,7 +155,7 @@ def compile_reference_image(illustration, seed, prefix, references, *, steps=REF
         graph[load] = node("LoadImage", image=filename)
         graph[scale] = node("FluxKontextImageScale", image=[load, 0])
         reduced = str(30 + index)
-        graph[reduced] = node("ImageScaleBy", image=[scale, 0], upscale_method="area", scale_by=0.5)
+        graph[reduced] = node("ImageScaleBy", image=[scale, 0], upscale_method="area", scale_by=0.75)
         images[f"image{index + 1}"] = [reduced, 0]
     graph.update({
         "4": node("TextEncodeQwenImageEditPlus", clip=["2", 0], vae=["3", 0], prompt=prompt, **images),

@@ -160,7 +160,12 @@ class StudioGeneration:
                 "qwen-image-edit-2511-cartoon-512-identity-v5", *legacy_presets]))
         else:
             legacy_presets.insert(0, "qwen-image-2512-cartoon-solo-portrait-512-20steps-v7")
-        legacy_presets.extend([PORTRAIT_PRESET, REFERENCE_PRESET, PRESET])
+        legacy_presets.extend([
+            "qwen-image-edit-2511-light-mood-512-40steps-scene-v1",
+            "qwen-image-edit-2511-light-mood-512-40steps-portrait-v1",
+            "qwen-image-2512-animation-solo-portrait-512-20steps-v8",
+            "flux2-dev-animation-512-action-scene-v7",
+            PORTRAIT_PRESET, REFERENCE_PRESET, PRESET])
         legacy_contexts = [context, legacy_context,
                            {k: v for k, v in context.items() if k != "styleReference"},
                            {k: v for k, v in legacy_context.items() if k != "styleReference"}]
