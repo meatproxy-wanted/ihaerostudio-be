@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "이해로 스튜디오 API",
-    "description": "\n## 이 API로 할 수 있는 일\n\n현재 이해로 스튜디오 프론트의 `ApiClient`에 대응하는 백엔드입니다. 모든 업무 API는\n`/api/studio`로 시작하며 **자료 만들기 → 사건 구조 확인 → 쉬운 설명자료 생성·편집 → 검토 → 게시본 생성·공개** 흐름을 지원합니다.\n프론트의 각 요청과 응답은 camelCase 필드명을 사용합니다. 경로 매개변수 `project_id`·`publication_id`는 snake_case입니다.\n\n### 처음 연결할 때의 호출 순서\n\n| 단계 | 호출 | 응답에서 확인할 값 / 다음 동작 |\n| --- | --- | --- |\n| 1. 자료 만들기 | `POST /projects/text` 또는 `/projects/pdf` | 분석과 저장이 끝나면 `201`과 `project` 객체를 반환합니다. `id`를 보관합니다. |\n| 2. 원문·구조 확인 | `GET /projects/{id}/source`, `/structure` | 원문 문단과 추출한 사건 구조를 보여 줍니다. 수정한 구조는 `PUT /structure`로 저장합니다. |\n| 3. 쉬운 글 생성 | `POST /projects/{id}/document/generate` | 완료된 `{document, project}`를 반환합니다. 초안 생성만으로 모든 그림을 생성하지는 않습니다. |\n| 4. 편집·그림 | 문장 보조 API, `POST /assist/images`, `PUT /document` | 제안·그림 후보를 사용자가 선택한 뒤 문서 전체를 저장합니다. |\n| 5. 검토 | `POST /review/run` → 항목 확인 → `POST /review/complete` | 규칙 점검과 제작자의 원문·그림 대조를 구분합니다. 미처리 required 항목이 없어야 완료할 수 있습니다. |\n| 6. 게시·공개 | `POST /publications` → `PUT /public` | 게시본 생성과 외부 공개는 별도 동작입니다. 공개할 검토 완료 게시본 ID를 지정합니다. |\n| 7. 독자 조회 | `GET /reader/{id}` | 인증 없이 공개 게시본을 읽습니다. 미공개·삭제·자료 없음은 모두 `200 {\"status\":\"unavailable\"}`입니다. |\n\n표의 경로에는 `/api/studio`를 붙입니다. `/structure`·`/document`·`/assist/...`·`/review/...`·`/publications`·`/public`은\n`/projects/{id}` 아래 경로를 축약한 표현입니다. 예: 그림 후보의 전체 경로는 `/api/studio/projects/{id}/assist/images`입니다.\n응답의 `project`는 목록·진행 상태 요약이며,\n원문·사건 구조·문서 본문이 한꺼번에 들어 있지 않습니다. 각 조회 API로 가져오세요.\n\n## 인증과 Swagger 사용법\n\n오른쪽 **Authorize**에는 **토큰 값만** 입력합니다. Swagger가 `Authorization: Bearer <토큰>` 헤더를 붙입니다.\n기본값인 익명 모드(`AUTH_MODE=anonymous`)에서는 영문·숫자·`._~-`로 된 16자 이상의 아무 토큰이나 받아들여\n그 토큰만의 작업함을 만듭니다. 프론트는 브라우저마다 만든 방문자 ID를 보냅니다. 서버는 토큰의 해시만 저장합니다.\n`AUTH_MODE=keys`로 바꾸면 `API_KEYS`에 등록한 토큰만 통과하며, 등록한 토큰은 두 모드 모두에서 그 제작자로 인식됩니다.\n**OpenAI 키나 Comfy 키를 Authorize에 넣지 마세요.** 별도 회원가입·로그인·토큰 발급 API는 없고, AI 제공자 키는 서버 환경변수로만 관리합니다.\n\n공개 독자 API를 제외한 모든 업무 API는 인증이 필요합니다. 다른 제작자의 자료, 삭제한 자료,\n없는 자료는 제작자 조회에서 동일하게 `404 not_found`가 됩니다. 목록은 현재 토큰의 자료만 반환합니다.\n\n각 API를 펼치면 **호출 시점, 요청 방법, 응답 해석, 저장 영향, 다음 호출, 오류별 대응**이 나옵니다.\n`Try it out → Execute`는 설명 보기용 시뮬레이션이 아니라 실제 서버 요청입니다.\n예제의 `project-example`, `card-1`, `sentence-1`, `publication-example`, 검토 항목 key는\n실제 데이터 ID가 아니므로 **본인이 생성·조회한 응답의 ID와 버전으로 교체**하세요. 예제 사건은 모두 가상입니다.\n\n## 저장 버전과 원문 근거\n\n- 문서 `PUT`에는 직전 응답의 `saveRevision`, 사건 구조 `PUT`에는 직전 응답의 `revision`을 그대로 보냅니다.\n  `409 version_conflict`가 나면 최신 데이터를 다시 조회하고 사용자 변경을 합친 뒤 저장합니다. 같은 오래된 본문을 반복 전송하지 마세요.\n- `contentRevision`은 독자가 보는 내용의 버전이고, 저장마다 증가하는 `saveRevision`과 다릅니다.\n  원문 근거나 대조 표시만 수정하면 contentRevision이 같을 수 있어도 현재 검토 완료는 해제됩니다.\n- `basedOnStructureRevision`·`basedOnSettingsRevision`은 초안 생성의 기준 버전입니다. 문서 저장 요청에서 임의로 갱신할 수 없습니다.\n- `anchors[].start/end`는 **문단 text 기준 JavaScript UTF-16 인덱스**이며 시작 포함·끝 미포함입니다.\n  예: `😀원고`의 `원고`는 start=2, end=4입니다. 바이트 위치·PDF 좌표·문서 전체 위치가 아닙니다.\n- 실제 AI가 만든 구조·초안의 근거는 모델이 원문에서 복사한 인용문을 서버가 문단 안에서 찾아 위치로 바꿉니다.\n  찾지 못한 인용은 버리고, 구조 항목에는 `anchor-unresolved` 확인 표시를 답니다. 문장은 근거 없는 상태로 남아 점검 대상이 됩니다.\n\n## 실제 AI, 데모, 그림 생성의 차이\n\n| 설정 / 요청 | 실제 동작 |\n| --- | --- |\n| `AI_PROVIDER=demo` | 입력 원문의 명시된 표제를 단순 분류하고 초안에는 원문을 복사합니다. 실제 쉬운 글 생성이 아닙니다. |\n| `AI_PROVIDER=openai` + OpenAI 키·모델 | 자료 분석, 쉬운 글 초안, 문장·용어 보조에서 실제 OpenAI를 호출합니다. |\n| 실제 AI 모드 + `COMFY_CLOUD_API_KEY` + 그림 후보 보기 | OpenAI가 저장된 카드의 장면 설명을 만들고 Comfy가 등장인물 초상은 기존 FLUX Schnell (768×768, 4 steps), 참조 없는 장면은 FLUX.2 Dev (FP8, 1024×1024, 20 steps), 참조 장면은 Qwen-Image-Edit-2511 (FP8, 20 steps, CFG 4)로 그림 1장을 생성합니다. |\n| 데모의 그림 후보 보기 | 이 자료에 업로드한 그림만 반환합니다. 없으면 candidates는 빈 배열입니다. |\n\n텍스트 생성은 동기 응답입니다. `200/201` 성공 응답은 생성·검증·저장이 필요한 작업을 마친 결과이며\n작업 접수 ID나 스트리밍 토큰이 아닙니다. 외부 AI 실패를 데모 결과로 바꿔 성공 처리하지 않습니다.\n새 자료 분석이 실패하면 프로젝트를 만들지 않고, 초안 생성이 실패하면 기존 문서를 보존합니다.\n기존 데모 자료는 서버를 실제 AI 모드로 바꿔도 자동 재분석되지 않습니다.\n\n그림 API는 작업을 DB에 보관합니다. 동일한 카드 내용은 완성된 그림 또는 진행 중 작업을 재사용합니다.\nComfy 완료를 90초간 기다려도 끝나지 않으면 `503 image_in_progress`를 반환하며 같은 요청으로 이어서 확인합니다.\n이 90초는 OpenAI 장면 설명 생성·사전 점검·파일 다운로드 시간을 포함한 전체 HTTP 제한 시간이 아닙니다.\nComfy 접수 결과가 불확실하거나 작업이 실패·만료되면 자동으로 새 유료 작업을 제출하지 않습니다.\n그림 파일은 서버가 PNG로 보관하고 `/api/studio/assets/{id}` 주소로 내주므로 제공자의 임시 URL 만료에 영향을 받지 않습니다.\n\n실제 AI를 호출하면 해당 원문·사건 구조·편집 텍스트가 OpenAI로 전달되고, 그림 생성 시 장면 설명이 Comfy로 전달됩니다.\n그림과 대체텍스트는 생성 초안이며 제작자의 의미 대조가 필요합니다. 검토 API는 의미를 판정하는 AI가 아니라 규칙 점검입니다.\n\n## 오류·제한·기타 경로\n\n업무 오류는 `{ \"detail\": { \"code\": \"version_conflict\", \"message\": \"…\" } }` 형식입니다.\n필수 필드·타입·열거값 등 요청 검증 오류는 `422`이고 `detail`이 오류 위치와 메시지의 **배열**일 수 있습니다.\n프론트는 HTTP 상태와 `detail.code`로 처리하되, 422의 두 응답 형식을 모두 고려해야 합니다.\n원본 제공자 오류·API 키는 응답으로 노출하지 않습니다. 개별 API의 Responses에서 발생 조건과 예시를 확인하세요.\n\n텍스트 100~100,000자, PDF 4.5MB·100쪽·추출 텍스트 150,000자·문단 300개, 그림 업로드 2MB,\n자료당 그림 100개·그림 파일 합계 12MiB, 전체 HTTP 요청 본문 5MB 제한이 있습니다.\n문서는 전체 카드 300개·문장 1,500개를 넘을 수 없습니다. 스캔 PDF의 OCR은 제공하지 않습니다.\n\n`/health`는 상태 확인 전용이며 Swagger 목록에서 제외합니다. `ai_provider`는 선택한 서버 모드이고\n외부 키의 실시간 유효성 검사 결과는 아닙니다. PDF 출력은 FE의 인쇄 화면을 사용합니다.\n기존 `/api/v1`, 별도 영상·그림 작업 API, `/share` 경로는 제공하지 않습니다.\n",
+    "description": "\n## 이 API로 할 수 있는 일\n\n현재 이해로 스튜디오 프론트의 `ApiClient`에 대응하는 백엔드입니다. 모든 업무 API는\n`/api/studio`로 시작하며 **자료 만들기 → 사건 구조 확인 → 쉬운 설명자료 생성·편집 → 검토 → 게시본 생성·공개** 흐름을 지원합니다.\n프론트의 각 요청과 응답은 camelCase 필드명을 사용합니다. 경로 매개변수 `project_id`·`publication_id`는 snake_case입니다.\n\n### 처음 연결할 때의 호출 순서\n\n| 단계 | 호출 | 응답에서 확인할 값 / 다음 동작 |\n| --- | --- | --- |\n| 1. 자료 만들기 | `POST /projects/text` 또는 `/projects/pdf` | 분석과 저장이 끝나면 `201`과 `project` 객체를 반환합니다. `id`를 보관합니다. |\n| 2. 원문·구조 확인 | `GET /projects/{id}/source`, `/structure` | 원문 문단과 추출한 사건 구조를 보여 줍니다. 수정한 구조는 `PUT /structure`로 저장합니다. |\n| 3. 쉬운 글 생성 | `POST /projects/{id}/document/generate` | 완료된 `{document, project}`를 반환합니다. 편집 진입 시 POST document/prepare-images를 이어 호출해 모든 카드 그림을 자동 생성·적용합니다. |\n| 4. 편집·그림 | `POST /document/prepare-images` 후 문장 보조·`POST /assist/images`·`PUT /document` | 진입 시 모든 그림을 자동 적용하고 인물만 고정합니다. 이후 글·장면을 편집합니다. |\n| 5. 검토 | `POST /review/run` → 항목 확인 → `POST /review/complete` | 규칙 점검과 제작자의 원문·그림 대조를 구분합니다. 미처리 required 항목이 없어야 완료할 수 있습니다. |\n| 6. 게시·공개 | `POST /publications` → `PUT /public` | 게시본 생성과 외부 공개는 별도 동작입니다. 공개할 검토 완료 게시본 ID를 지정합니다. |\n| 7. 독자 조회 | `GET /reader/{id}` | 인증 없이 공개 게시본을 읽습니다. 미공개·삭제·자료 없음은 모두 `200 {\"status\":\"unavailable\"}`입니다. |\n\n표의 경로에는 `/api/studio`를 붙입니다. `/structure`·`/document`·`/assist/...`·`/review/...`·`/publications`·`/public`은\n`/projects/{id}` 아래 경로를 축약한 표현입니다. 예: 그림 후보의 전체 경로는 `/api/studio/projects/{id}/assist/images`입니다.\n응답의 `project`는 목록·진행 상태 요약이며,\n원문·사건 구조·문서 본문이 한꺼번에 들어 있지 않습니다. 각 조회 API로 가져오세요.\n\n## 인증과 Swagger 사용법\n\n오른쪽 **Authorize**에는 **토큰 값만** 입력합니다. Swagger가 `Authorization: Bearer <토큰>` 헤더를 붙입니다.\n기본값인 익명 모드(`AUTH_MODE=anonymous`)에서는 영문·숫자·`._~-`로 된 16자 이상의 아무 토큰이나 받아들여\n그 토큰만의 작업함을 만듭니다. 프론트는 브라우저마다 만든 방문자 ID를 보냅니다. 서버는 토큰의 해시만 저장합니다.\n`AUTH_MODE=keys`로 바꾸면 `API_KEYS`에 등록한 토큰만 통과하며, 등록한 토큰은 두 모드 모두에서 그 제작자로 인식됩니다.\n**OpenAI 키나 Comfy 키를 Authorize에 넣지 마세요.** 별도 회원가입·로그인·토큰 발급 API는 없고, AI 제공자 키는 서버 환경변수로만 관리합니다.\n\n공개 독자 API를 제외한 모든 업무 API는 인증이 필요합니다. 다른 제작자의 자료, 삭제한 자료,\n없는 자료는 제작자 조회에서 동일하게 `404 not_found`가 됩니다. 목록은 현재 토큰의 자료만 반환합니다.\n\n각 API를 펼치면 **호출 시점, 요청 방법, 응답 해석, 저장 영향, 다음 호출, 오류별 대응**이 나옵니다.\n`Try it out → Execute`는 설명 보기용 시뮬레이션이 아니라 실제 서버 요청입니다.\n예제의 `project-example`, `card-1`, `sentence-1`, `publication-example`, 검토 항목 key는\n실제 데이터 ID가 아니므로 **본인이 생성·조회한 응답의 ID와 버전으로 교체**하세요. 예제 사건은 모두 가상입니다.\n\n## 저장 버전과 원문 근거\n\n- 문서 `PUT`에는 직전 응답의 `saveRevision`, 사건 구조 `PUT`에는 직전 응답의 `revision`을 그대로 보냅니다.\n  `409 version_conflict`가 나면 최신 데이터를 다시 조회하고 사용자 변경을 합친 뒤 저장합니다. 같은 오래된 본문을 반복 전송하지 마세요.\n- `contentRevision`은 독자가 보는 내용의 버전이고, 저장마다 증가하는 `saveRevision`과 다릅니다.\n  원문 근거나 대조 표시만 수정하면 contentRevision이 같을 수 있어도 현재 검토 완료는 해제됩니다.\n- `basedOnStructureRevision`·`basedOnSettingsRevision`은 초안 생성의 기준 버전입니다. 문서 저장 요청에서 임의로 갱신할 수 없습니다.\n- `anchors[].start/end`는 **문단 text 기준 JavaScript UTF-16 인덱스**이며 시작 포함·끝 미포함입니다.\n  예: `😀원고`의 `원고`는 start=2, end=4입니다. 바이트 위치·PDF 좌표·문서 전체 위치가 아닙니다.\n- 실제 AI가 만든 구조·초안의 근거는 모델이 원문에서 복사한 인용문을 서버가 문단 안에서 찾아 위치로 바꿉니다.\n  찾지 못한 인용은 버리고, 구조 항목에는 `anchor-unresolved` 확인 표시를 답니다. 문장은 근거 없는 상태로 남아 점검 대상이 됩니다.\n\n## 실제 AI, 데모, 그림 생성의 차이\n\n| 설정 / 요청 | 실제 동작 |\n| --- | --- |\n| `AI_PROVIDER=demo` | 입력 원문의 명시된 표제를 단순 분류하고 초안에는 원문을 복사합니다. 실제 쉬운 글 생성이 아닙니다. |\n| `AI_PROVIDER=openai` + OpenAI 키·모델 | 자료 분석, 쉬운 글 초안, 문장·용어 보조에서 실제 OpenAI를 호출합니다. |\n| 실제 AI 모드 + `COMFY_CLOUD_API_KEY` + 그림 후보 보기 | OpenAI가 저장된 카드의 장면 설명을 만들고 Comfy가 등장인물 초상은 기존 FLUX Schnell (768×768, 4 steps), 참조 없는 장면은 FLUX.2 Dev (FP8, 1024×1024, 20 steps), 참조 장면은 Qwen-Image-Edit-2511 (FP8, 20 steps, CFG 4)로 그림 1장을 생성합니다. |\n| 데모의 그림 후보 보기 | 이 자료에 업로드한 그림만 반환합니다. 없으면 candidates는 빈 배열입니다. |\n\n텍스트 생성은 동기 응답입니다. `200/201` 성공 응답은 생성·검증·저장이 필요한 작업을 마친 결과이며\n작업 접수 ID나 스트리밍 토큰이 아닙니다. 외부 AI 실패를 데모 결과로 바꿔 성공 처리하지 않습니다.\n새 자료 분석이 실패하면 프로젝트를 만들지 않고, 초안 생성이 실패하면 기존 문서를 보존합니다.\n기존 데모 자료는 서버를 실제 AI 모드로 바꿔도 자동 재분석되지 않습니다.\n\n그림 API는 작업을 DB에 보관합니다. 동일한 카드 내용은 완성된 그림 또는 진행 중 작업을 재사용합니다.\nComfy 완료를 90초간 기다려도 끝나지 않으면 `503 image_in_progress`를 반환하며 같은 요청으로 이어서 확인합니다.\n이 90초는 OpenAI 장면 설명 생성·사전 점검·파일 다운로드 시간을 포함한 전체 HTTP 제한 시간이 아닙니다.\nComfy 접수 결과가 불확실하거나 작업이 실패·만료되면 자동으로 새 유료 작업을 제출하지 않습니다.\n그림 파일은 서버가 PNG로 보관하고 `/api/studio/assets/{id}` 주소로 내주므로 제공자의 임시 URL 만료에 영향을 받지 않습니다.\n\n실제 AI를 호출하면 해당 원문·사건 구조·편집 텍스트가 OpenAI로 전달되고, 그림 생성 시 장면 설명이 Comfy로 전달됩니다.\n그림과 대체텍스트는 생성 초안이며 제작자의 의미 대조가 필요합니다. 검토 API는 의미를 판정하는 AI가 아니라 규칙 점검입니다.\n\n## 오류·제한·기타 경로\n\n업무 오류는 `{ \"detail\": { \"code\": \"version_conflict\", \"message\": \"…\" } }` 형식입니다.\n필수 필드·타입·열거값 등 요청 검증 오류는 `422`이고 `detail`이 오류 위치와 메시지의 **배열**일 수 있습니다.\n프론트는 HTTP 상태와 `detail.code`로 처리하되, 422의 두 응답 형식을 모두 고려해야 합니다.\n원본 제공자 오류·API 키는 응답으로 노출하지 않습니다. 개별 API의 Responses에서 발생 조건과 예시를 확인하세요.\n\n텍스트 100~100,000자, PDF 4.5MB·100쪽·추출 텍스트 150,000자·문단 300개, 그림 업로드 2MB,\n자료당 그림 100개·그림 파일 합계 12MiB, 전체 HTTP 요청 본문 5MB 제한이 있습니다.\n문서는 전체 카드 300개·문장 1,500개를 넘을 수 없습니다. 스캔 PDF의 OCR은 제공하지 않습니다.\n\n`/health`는 상태 확인 전용이며 Swagger 목록에서 제외합니다. `ai_provider`는 선택한 서버 모드이고\n외부 키의 실시간 유효성 검사 결과는 아닙니다. PDF 출력은 FE의 인쇄 화면을 사용합니다.\n기존 `/api/v1`, 별도 영상·그림 작업 API, `/share` 경로는 제공하지 않습니다.\n",
     "version": "0.3.0"
   },
   "paths": {
@@ -1480,7 +1480,7 @@
             }
           }
         },
-        "description": "### 프론트 호출 시점\n\n제작 설정에서 문체, 당사자 부르는 방식, 그림 포함 여부를 변경할 때 호출합니다.\n\n### 요청 방법\n\nSettings의 tone·naming·illustrations를 모두 보냅니다. 부분 PATCH가 아닙니다. 별도의 expectedRevision 입력은 없습니다.\n\n### 응답 해석\n\n갱신된 project를 반환합니다. 실제 변경 시 settingsRevision이 증가하며 naming 변경은 structureRevision도 증가시킵니다. 동일한 설정을 보내면 그대로 반환합니다.\n\n### 저장·버전·외부 호출 영향\n\n설정 변경 시 기존 문서가 있으면 saveRevision/contentRevision이 증가하고 현재 검토를 해제합니다. naming은 구조의 표시 이름을 바꾸지만 기존 문장·문서 partyNames를 자동 재작성하지 않습니다. with는 그림 표시 설정이며 자동 일괄 생성 명령이 아닙니다.\n\n### 다음 동작\n\n문서가 열려 있으면 최신 project·structure·document를 다시 읽으세요. 새 기준을 기존 글에 직접 반영하거나 필요할 때 초안을 재생성하고 재검토합니다.\n\n**인증:** 제작자 Bearer 토큰이 필요합니다. 다른 제작자의 자료에는 접근할 수 없습니다."
+        "description": "### 프론트 호출 시점\n\n제작 설정에서 문체, 당사자 부르는 방식, 그림 포함 여부를 변경할 때 호출합니다.\n\n### 요청 방법\n\nSettings의 tone·naming·illustrations를 모두 보냅니다. 부분 PATCH가 아닙니다. 별도의 expectedRevision 입력은 없습니다.\n\n### 응답 해석\n\n갱신된 project를 반환합니다. 실제 변경 시 settingsRevision이 증가하며 naming 변경은 structureRevision도 증가시킵니다. 동일한 설정을 보내면 그대로 반환합니다.\n\n### 저장·버전·외부 호출 영향\n\n설정 변경 시 기존 문서가 있으면 saveRevision/contentRevision이 증가하고 현재 검토를 해제합니다. naming은 구조의 표시 이름을 바꾸지만 기존 문장·문서 partyNames를 자동 재작성하지 않습니다. with는 그림 표시 설정이며 편집 진입 시 prepare-images로 자동 일괄 생성합니다.\n\n### 다음 동작\n\n문서가 열려 있으면 최신 project·structure·document를 다시 읽으세요. 새 기준을 기존 글에 직접 반영하거나 필요할 때 초안을 재생성하고 재검토합니다.\n\n**인증:** 제작자 Bearer 토큰이 필요합니다. 다른 제작자의 자료에는 접근할 수 없습니다."
       }
     },
     "/api/studio/projects/{project_id}/source": {
@@ -2152,7 +2152,7 @@
             }
           },
           "409": {
-            "description": "발생 조건과 처리 방법:\n\n- **version_conflict**: 다른 편집이 저장됐어요. 새로고침 후 다시 시도해 주세요. 최신 자료를 GET하고 변경 내용을 합친 뒤 최신 버전으로 다시 저장합니다.\n",
+            "description": "발생 조건과 처리 방법:\n\n- **version_conflict**: 다른 편집이 저장됐어요. 새로고침 후 다시 시도해 주세요. 최신 자료를 GET하고 변경 내용을 합친 뒤 최신 버전으로 다시 저장합니다.\n\n- **character_locked**: 등장인물 기준 그림은 고정돼 있어요. 인물 그림의 교체·삭제와 인물 카드 제거는 불가합니다. 문장과 장면 그림, 대체텍스트는 편집할 수 있습니다. 초안 재생성도 기존 인물 그림을 유지합니다.\n",
             "content": {
               "application/json": {
                 "schema": {
@@ -2166,6 +2166,16 @@
                       "detail": {
                         "code": "version_conflict",
                         "message": "다른 편집이 저장됐어요. 새로고침 후 다시 시도해 주세요."
+                      }
+                    }
+                  },
+                  "character_locked": {
+                    "summary": "character_locked",
+                    "description": "인물 그림의 교체·삭제와 인물 카드 제거는 불가합니다. 문장과 장면 그림, 대체텍스트는 편집할 수 있습니다. 초안 재생성도 기존 인물 그림을 유지합니다.",
+                    "value": {
+                      "detail": {
+                        "code": "character_locked",
+                        "message": "등장인물 기준 그림은 고정돼 있어요."
                       }
                     }
                   }
@@ -2466,7 +2476,7 @@
             }
           }
         },
-        "description": "### 프론트 호출 시점\n\n사건 구조 확인 후 처음 초안을 만들거나 기존 초안을 명시적으로 다시 만들 때 호출합니다.\n\n### 요청 방법\n\nproject_id만 보내며 본문은 없습니다. 현재 DB에 저장된 원문·사건 구조·설정을 기준으로 생성하므로 구조 수정을 먼저 저장하세요.\n\n### 응답 해석\n\n200과 {document, project}를 반환합니다. document에는 네 구획, 카드별 문장, 근거, 당사자 이름, 용어 풀이 등이 들어갑니다. 작업 ID가 아니라 완료된 문서입니다. 실제 AI 초안의 images는 빈 배열이고 imageId는 null입니다.\n\n### 저장·버전·외부 호출 영향\n\nOpenAI 모드는 실제 생성, demo는 원문 복사입니다. 서버는 모든 새 문장에 origin=ai-draft·verified=false를 강제합니다. 처음 버전은 0이고 재생성은 기존 편집 문서를 교체하며 saveRevision/contentRevision을 각각 증가시키고 검토를 해제합니다. 실패하면 기존 문서를 보존합니다.\n\n### 다음 동작\n\n반환한 document를 편집기에, project를 진행 상태에 반영하세요. 필요한 카드에서 assist/images를 호출하고 사용자 선택 후 PUT document로 저장합니다. 재호출은 새 생성이므로 중복 클릭을 막으세요.\n\n**인증:** 제작자 Bearer 토큰이 필요합니다. 다른 제작자의 자료에는 접근할 수 없습니다."
+        "description": "### 프론트 호출 시점\n\n사건 구조 확인 후 처음 초안을 만들거나 기존 초안을 명시적으로 다시 만들 때 호출합니다.\n\n### 요청 방법\n\nproject_id만 보내며 본문은 없습니다. 현재 DB에 저장된 원문·사건 구조·설정을 기준으로 생성하므로 구조 수정을 먼저 저장하세요.\n\n### 응답 해석\n\n200과 {document, project}를 반환합니다. document에는 네 구획, 카드별 문장, 근거, 당사자 이름, 용어 풀이 등이 들어갑니다. 작업 ID가 아니라 완료된 문서입니다. 첫 초안의 images는 빈 배열이고 imageId는 null입니다. 재생성 시 고정된 인물 그림은 유지합니다.\n\n### 저장·버전·외부 호출 영향\n\nOpenAI 모드는 실제 생성, demo는 원문 복사입니다. 서버는 모든 새 문장에 origin=ai-draft·verified=false를 강제합니다. 처음 버전은 0이고 재생성은 기존 편집 문서를 교체하며 saveRevision/contentRevision을 각각 증가시키고 검토를 해제합니다. 실패하면 기존 문서를 보존합니다.\n\n### 다음 동작\n\n반환한 document를 편집기에, project를 진행 상태에 반영하세요. 편집 진입 시 document/prepare-images를 완료까지 이어 호출하면 인물과 장면 그림을 자동 생성·적용합니다. 이후 장면 변경만 assist/images와 PUT document로 처리합니다. 재호출은 새 생성이므로 중복 클릭을 막으세요.\n\n**인증:** 제작자 Bearer 토큰이 필요합니다. 다른 제작자의 자료에는 접근할 수 없습니다."
       }
     },
     "/api/studio/projects/{project_id}/document": {
@@ -2772,7 +2782,7 @@
             }
           },
           "409": {
-            "description": "발생 조건과 처리 방법:\n\n- **version_conflict**: 다른 편집이 저장됐어요. 새로고침 후 다시 시도해 주세요. 최신 자료를 GET하고 변경 내용을 합친 뒤 최신 버전으로 다시 저장합니다.\n",
+            "description": "발생 조건과 처리 방법:\n\n- **version_conflict**: 다른 편집이 저장됐어요. 새로고침 후 다시 시도해 주세요. 최신 자료를 GET하고 변경 내용을 합친 뒤 최신 버전으로 다시 저장합니다.\n\n- **character_locked**: 등장인물 기준 그림은 고정돼 있어요. 인물 그림의 교체·삭제와 인물 카드 제거는 불가합니다. 문장과 장면 그림, 대체텍스트는 편집할 수 있습니다. 초안 재생성도 기존 인물 그림을 유지합니다.\n",
             "content": {
               "application/json": {
                 "schema": {
@@ -2786,6 +2796,16 @@
                       "detail": {
                         "code": "version_conflict",
                         "message": "다른 편집이 저장됐어요. 새로고침 후 다시 시도해 주세요."
+                      }
+                    }
+                  },
+                  "character_locked": {
+                    "summary": "character_locked",
+                    "description": "인물 그림의 교체·삭제와 인물 카드 제거는 불가합니다. 문장과 장면 그림, 대체텍스트는 편집할 수 있습니다. 초안 재생성도 기존 인물 그림을 유지합니다.",
+                    "value": {
+                      "detail": {
+                        "code": "character_locked",
+                        "message": "등장인물 기준 그림은 고정돼 있어요."
                       }
                     }
                   }
@@ -3034,6 +3054,551 @@
           }
         },
         "description": "### 프론트 호출 시점\n\n직접 편집, AI 제안 적용, 그림 선택·업로드 적용, 원문 대조 표시 변경 후 자동 저장할 때 호출합니다.\n\n### 요청 방법\n\nEasyDocument 전체를 보냅니다. projectId와 직전 saveRevision을 유지하고 네 구획 및 참조 목록을 모두 포함하세요. 부분 PATCH가 아닙니다. 카드의 imageId는 images[].id와 연결하고 src는 이 프로젝트에 이미 보관된 그림이어야 합니다.\n\n### 응답 해석\n\n{document, project}를 반환합니다. 성공할 때마다 saveRevision이 증가합니다. contentRevision은 독자용 내용이 바뀐 경우에만 서버가 증가시키며 클라이언트가 보낸 임의 버전은 무시합니다.\n\n### 저장·버전·외부 호출 영향\n\n저장 시 현재 점검과 검토 완료를 해제합니다. 대조 표시/근거만 바뀌면 contentRevision이 같아도 검토는 다시 해야 합니다. basedOnStructureRevision·basedOnSettingsRevision은 이전 초안의 값을 유지합니다. 이미 공개한 고정 게시본은 바꾸지 않습니다.\n\n### 다음 동작\n\n반환된 문서·버전을 저장 상태로 교체하세요. 409이면 최신 GET 결과에 사용자 변경을 합쳐 다시 저장합니다. 저장 후 검토 및 새 게시본 생성·공개는 별도로 수행합니다.\n\n**인증:** 제작자 Bearer 토큰이 필요합니다. 다른 제작자의 자료에는 접근할 수 없습니다."
+      }
+    },
+    "/api/studio/projects/{project_id}/document/prepare-images": {
+      "post": {
+        "tags": [
+          "FE 연동"
+        ],
+        "summary": "편집 진입 그림 일괄 생성 — 인물 먼저 생성·고정 후 장면 자동 적용",
+        "operationId": "prepare_images_api_studio_projects__project_id__document_prepare_images_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            },
+            "description": "자료 생성 응답의 id 또는 작업함 목록의 id. 예시 ID를 실제 값으로 교체하세요.",
+            "example": "project-example"
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "발생 조건과 처리 방법:\n\n- **unauthorized**: 유효한 Bearer 토큰이 필요합니다. 토큰이 없거나 형식이 맞지 않습니다(익명 모드: 영문·숫자·._~- 16자 이상). keys 모드에서는 API_KEYS에 등록한 토큰이어야 합니다.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "unauthorized": {
+                    "summary": "unauthorized",
+                    "description": "토큰이 없거나 형식이 맞지 않습니다(익명 모드: 영문·숫자·._~- 16자 이상). keys 모드에서는 API_KEYS에 등록한 토큰이어야 합니다.",
+                    "value": {
+                      "detail": {
+                        "code": "unauthorized",
+                        "message": "유효한 Bearer 토큰이 필요합니다."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "발생 조건과 처리 방법:\n\n- **not_found**: 자료 또는 요청한 항목을 찾을 수 없어요. ID·소유권·삭제 여부를 확인합니다. 문서 API는 초안 생성 전에도 404입니다.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "not_found": {
+                    "summary": "not_found",
+                    "description": "ID·소유권·삭제 여부를 확인합니다. 문서 API는 초안 생성 전에도 404입니다.",
+                    "value": {
+                      "detail": {
+                        "code": "not_found",
+                        "message": "자료 또는 요청한 항목을 찾을 수 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "발생 조건과 처리 방법:\n\n- **version_conflict**: 다른 편집이 저장됐어요. 새로고침 후 다시 시도해 주세요. 최신 자료를 GET하고 변경 내용을 합친 뒤 최신 버전으로 다시 저장합니다.\n\n- **character_locked**: 등장인물 기준 그림은 고정돼 있어요. 인물 그림의 교체·삭제와 인물 카드 제거는 불가합니다. 문장과 장면 그림, 대체텍스트는 편집할 수 있습니다. 초안 재생성도 기존 인물 그림을 유지합니다.\n\n- **image_card_changed**: 생성 중 카드 내용이 바뀌었어요. 현재 문서를 다시 조회하고 새 내용으로 그림을 요청합니다. 새 내용은 새 생성 작업이 될 수 있습니다.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "version_conflict": {
+                    "summary": "version_conflict",
+                    "description": "최신 자료를 GET하고 변경 내용을 합친 뒤 최신 버전으로 다시 저장합니다.",
+                    "value": {
+                      "detail": {
+                        "code": "version_conflict",
+                        "message": "다른 편집이 저장됐어요. 새로고침 후 다시 시도해 주세요."
+                      }
+                    }
+                  },
+                  "character_locked": {
+                    "summary": "character_locked",
+                    "description": "인물 그림의 교체·삭제와 인물 카드 제거는 불가합니다. 문장과 장면 그림, 대체텍스트는 편집할 수 있습니다. 초안 재생성도 기존 인물 그림을 유지합니다.",
+                    "value": {
+                      "detail": {
+                        "code": "character_locked",
+                        "message": "등장인물 기준 그림은 고정돼 있어요."
+                      }
+                    }
+                  },
+                  "image_card_changed": {
+                    "summary": "image_card_changed",
+                    "description": "현재 문서를 다시 조회하고 새 내용으로 그림을 요청합니다. 새 내용은 새 생성 작업이 될 수 있습니다.",
+                    "value": {
+                      "detail": {
+                        "code": "image_card_changed",
+                        "message": "생성 중 카드 내용이 바뀌었어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "발생 조건과 처리 방법:\n\n- **character_reference_limit**: 프로젝트 기준 그림은 최대 6개, Qwen Edit 장면에 전달하는 기준 그림은 최대 3개입니다. 장면에 등장할 인물을 명확히 적거나 카드를 나눠 참조를 3개 이하로 조정합니다. 관련 참조를 임의로 잘라 보내지 않습니다.\n\n- **invalid_party**: 당사자 참조를 확인해 주세요. 구조 parties 또는 문서 partyNames에 참조하는 당사자가 있는지 확인합니다.\n\n- **character_reference_invalid**: 등장인물 기준 그림을 사용할 수 없어요. 등장인물 카드에 이 자료의 PNG·JPEG·WebP 그림을 적용하고 저장합니다. SVG 기준 그림, 사라진 파일, 다른 자료의 자산은 사용할 수 없습니다.\n\n- **character_reference_ambiguous**: 같은 등장인물에 서로 다른 그림이 연결돼 있어요. 동일 partyId의 등장인물 카드가 여러 개라면 동일한 기준 그림으로 맞춥니다.\n\n- **character_reference_unclear**: 기준 그림에서 한 사람을 특정하기 어려워요. 한 사람이 있는 그림을 등장인물 카드에 적용하고 저장합니다. 얼굴 가시성만으로 후보를 제외하지 않습니다.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "character_reference_limit": {
+                    "summary": "character_reference_limit",
+                    "description": "장면에 등장할 인물을 명확히 적거나 카드를 나눠 참조를 3개 이하로 조정합니다. 관련 참조를 임의로 잘라 보내지 않습니다.",
+                    "value": {
+                      "detail": {
+                        "code": "character_reference_limit",
+                        "message": "프로젝트 기준 그림은 최대 6개, Qwen Edit 장면에 전달하는 기준 그림은 최대 3개입니다."
+                      }
+                    }
+                  },
+                  "invalid_party": {
+                    "summary": "invalid_party",
+                    "description": "구조 parties 또는 문서 partyNames에 참조하는 당사자가 있는지 확인합니다.",
+                    "value": {
+                      "detail": {
+                        "code": "invalid_party",
+                        "message": "당사자 참조를 확인해 주세요."
+                      }
+                    }
+                  },
+                  "character_reference_invalid": {
+                    "summary": "character_reference_invalid",
+                    "description": "등장인물 카드에 이 자료의 PNG·JPEG·WebP 그림을 적용하고 저장합니다. SVG 기준 그림, 사라진 파일, 다른 자료의 자산은 사용할 수 없습니다.",
+                    "value": {
+                      "detail": {
+                        "code": "character_reference_invalid",
+                        "message": "등장인물 기준 그림을 사용할 수 없어요."
+                      }
+                    }
+                  },
+                  "character_reference_ambiguous": {
+                    "summary": "character_reference_ambiguous",
+                    "description": "동일 partyId의 등장인물 카드가 여러 개라면 동일한 기준 그림으로 맞춥니다.",
+                    "value": {
+                      "detail": {
+                        "code": "character_reference_ambiguous",
+                        "message": "같은 등장인물에 서로 다른 그림이 연결돼 있어요."
+                      }
+                    }
+                  },
+                  "character_reference_unclear": {
+                    "summary": "character_reference_unclear",
+                    "description": "한 사람이 있는 그림을 등장인물 카드에 적용하고 저장합니다. 얼굴 가시성만으로 후보를 제외하지 않습니다.",
+                    "value": {
+                      "detail": {
+                        "code": "character_reference_unclear",
+                        "message": "기준 그림에서 한 사람을 특정하기 어려워요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "발생 조건과 처리 방법:\n\n- **image_limit**: 자료의 그림 개수 또는 용량 한도를 넘었어요. 자료당 보관 그림 100개·src 합계 12MiB 제한입니다. 문서에서 그림 연결만 빼도 보관 자산은 삭제되지 않습니다.\n\n- **ai_input_too_large**: AI 입력이 너무 큽니다. 원문·구조·입력 등을 합친 직렬화 JSON이 200,000자를 넘지 않도록 자료를 나눕니다.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "image_limit": {
+                    "summary": "image_limit",
+                    "description": "자료당 보관 그림 100개·src 합계 12MiB 제한입니다. 문서에서 그림 연결만 빼도 보관 자산은 삭제되지 않습니다.",
+                    "value": {
+                      "detail": {
+                        "code": "image_limit",
+                        "message": "자료의 그림 개수 또는 용량 한도를 넘었어요."
+                      }
+                    }
+                  },
+                  "ai_input_too_large": {
+                    "summary": "ai_input_too_large",
+                    "description": "원문·구조·입력 등을 합친 직렬화 JSON이 200,000자를 넘지 않도록 자료를 나눕니다.",
+                    "value": {
+                      "detail": {
+                        "code": "ai_input_too_large",
+                        "message": "AI 입력이 너무 큽니다."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "발생 조건과 처리 방법:\n\n- **image_missing_output**: Comfy 작업에 완성된 그림이 없어요. 관리자가 해당 Comfy 작업의 출력과 로그를 확인합니다.\n\n- **image_generation_failed**: Comfy 그림 생성이 완료되지 않았어요. 작업이 failed·canceled·expired 상태입니다. 자동 새 생성 없이 관리자 확인이 필요합니다.\n\n- **ai_provider_error**: OpenAI API 호출 또는 응답 검증에 실패했습니다. 서버의 키·모델·권한을 확인합니다. 기존 문서는 성공 응답 전까지 유지됩니다.\n\n- **ai_incomplete_response**: GPT 응답이 완료되지 않았습니다. 모델 출력 한도를 확인하거나 자료를 줄입니다.\n\n- **ai_refusal**: GPT가 요청의 처리를 거절했습니다. 원문을 확인하고 직접 편집합니다.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "image_missing_output": {
+                    "summary": "image_missing_output",
+                    "description": "관리자가 해당 Comfy 작업의 출력과 로그를 확인합니다.",
+                    "value": {
+                      "detail": {
+                        "code": "image_missing_output",
+                        "message": "Comfy 작업에 완성된 그림이 없어요."
+                      }
+                    }
+                  },
+                  "image_generation_failed": {
+                    "summary": "image_generation_failed",
+                    "description": "작업이 failed·canceled·expired 상태입니다. 자동 새 생성 없이 관리자 확인이 필요합니다.",
+                    "value": {
+                      "detail": {
+                        "code": "image_generation_failed",
+                        "message": "Comfy 그림 생성이 완료되지 않았어요."
+                      }
+                    }
+                  },
+                  "ai_provider_error": {
+                    "summary": "ai_provider_error",
+                    "description": "서버의 키·모델·권한을 확인합니다. 기존 문서는 성공 응답 전까지 유지됩니다.",
+                    "value": {
+                      "detail": {
+                        "code": "ai_provider_error",
+                        "message": "OpenAI API 호출 또는 응답 검증에 실패했습니다."
+                      }
+                    }
+                  },
+                  "ai_incomplete_response": {
+                    "summary": "ai_incomplete_response",
+                    "description": "모델 출력 한도를 확인하거나 자료를 줄입니다.",
+                    "value": {
+                      "detail": {
+                        "code": "ai_incomplete_response",
+                        "message": "GPT 응답이 완료되지 않았습니다."
+                      }
+                    }
+                  },
+                  "ai_refusal": {
+                    "summary": "ai_refusal",
+                    "description": "원문을 확인하고 직접 편집합니다.",
+                    "value": {
+                      "detail": {
+                        "code": "ai_refusal",
+                        "message": "GPT가 요청의 처리를 거절했습니다."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "발생 조건과 처리 방법:\n\n- **comfy_not_configured**: 서버의 COMFY_CLOUD_API_KEY를 설정하세요. 백엔드 환경변수에 Comfy Cloud 키를 넣고 서버를 재시작합니다.\n\n- **comfy_auth_error**: Comfy 키 또는 구독 권한을 확인해 주세요. Comfy Cloud 키와 계정 실행 권한을 확인합니다.\n\n- **comfy_insufficient_credits**: Comfy 생성 크레딧이 부족해요. Comfy 계정의 크레딧을 확인합니다. 명확한 접수 거절은 기존 준비 작업으로 재시도할 수 있습니다.\n\n- **comfy_rate_limited**: Comfy 요청이 많아요. 잠시 후 같은 카드 요청으로 상태를 확인합니다.\n\n- **comfy_workflow_unavailable**: Comfy에서 그림 생성 모델을 사용할 수 없어요. 관리자가 고정 워크플로와 Cloud 모델 목록을 확인합니다.\n\n- **image_submission_unknown**: Comfy 접수 결과를 확인하지 못했어요. 중복 생성을 막기 위해 멈췄어요. 자동 재제출하지 않습니다. 관리자가 studio_image_jobs와 Comfy 작업 목록을 대조해야 합니다.\n\n- **comfy_connection_or_response_error**: Comfy 그림 응답을 확인하지 못했어요. 같은 요청으로 상태를 확인합니다. 접수 자체가 불확실했다면 이후 image_submission_unknown으로 멈출 수 있습니다.\n\n- **comfy_invalid_response**: Comfy 그림 응답을 확인하지 못했어요. 관리자가 응답 형식·작업 ID·자산 메타데이터를 확인합니다. 새 유료 작업으로 자동 대체하지 않습니다.\n\n- **comfy_asset_host_not_allowed**: 그림은 생성됐지만 저장소 주소가 허용되지 않았어요. 관리자가 실제 자산 호스트를 검증하고 COMFY_ASSET_ALLOWED_HOSTS에 등록합니다. 이후 같은 작업을 이어받습니다.\n\n- **comfy_download_failed**: Comfy 그림 파일을 내려받지 못했어요. 다시 요청하면 자산 메타데이터의 새 서명 URL로 다운로드를 재시도합니다.\n\n- **ai_rate_limited**: OpenAI API 사용 한도 또는 요청 제한에 도달했습니다. OpenAI 계정의 API 결제·사용 한도를 확인한 뒤 재시도합니다.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "comfy_not_configured": {
+                    "summary": "comfy_not_configured",
+                    "description": "백엔드 환경변수에 Comfy Cloud 키를 넣고 서버를 재시작합니다.",
+                    "value": {
+                      "detail": {
+                        "code": "comfy_not_configured",
+                        "message": "서버의 COMFY_CLOUD_API_KEY를 설정하세요."
+                      }
+                    }
+                  },
+                  "comfy_auth_error": {
+                    "summary": "comfy_auth_error",
+                    "description": "Comfy Cloud 키와 계정 실행 권한을 확인합니다.",
+                    "value": {
+                      "detail": {
+                        "code": "comfy_auth_error",
+                        "message": "Comfy 키 또는 구독 권한을 확인해 주세요."
+                      }
+                    }
+                  },
+                  "comfy_insufficient_credits": {
+                    "summary": "comfy_insufficient_credits",
+                    "description": "Comfy 계정의 크레딧을 확인합니다. 명확한 접수 거절은 기존 준비 작업으로 재시도할 수 있습니다.",
+                    "value": {
+                      "detail": {
+                        "code": "comfy_insufficient_credits",
+                        "message": "Comfy 생성 크레딧이 부족해요."
+                      }
+                    }
+                  },
+                  "comfy_rate_limited": {
+                    "summary": "comfy_rate_limited",
+                    "description": "잠시 후 같은 카드 요청으로 상태를 확인합니다.",
+                    "value": {
+                      "detail": {
+                        "code": "comfy_rate_limited",
+                        "message": "Comfy 요청이 많아요."
+                      }
+                    }
+                  },
+                  "comfy_workflow_unavailable": {
+                    "summary": "comfy_workflow_unavailable",
+                    "description": "관리자가 고정 워크플로와 Cloud 모델 목록을 확인합니다.",
+                    "value": {
+                      "detail": {
+                        "code": "comfy_workflow_unavailable",
+                        "message": "Comfy에서 그림 생성 모델을 사용할 수 없어요."
+                      }
+                    }
+                  },
+                  "image_submission_unknown": {
+                    "summary": "image_submission_unknown",
+                    "description": "자동 재제출하지 않습니다. 관리자가 studio_image_jobs와 Comfy 작업 목록을 대조해야 합니다.",
+                    "value": {
+                      "detail": {
+                        "code": "image_submission_unknown",
+                        "message": "Comfy 접수 결과를 확인하지 못했어요. 중복 생성을 막기 위해 멈췄어요."
+                      }
+                    }
+                  },
+                  "comfy_connection_or_response_error": {
+                    "summary": "comfy_connection_or_response_error",
+                    "description": "같은 요청으로 상태를 확인합니다. 접수 자체가 불확실했다면 이후 image_submission_unknown으로 멈출 수 있습니다.",
+                    "value": {
+                      "detail": {
+                        "code": "comfy_connection_or_response_error",
+                        "message": "Comfy 그림 응답을 확인하지 못했어요."
+                      }
+                    }
+                  },
+                  "comfy_invalid_response": {
+                    "summary": "comfy_invalid_response",
+                    "description": "관리자가 응답 형식·작업 ID·자산 메타데이터를 확인합니다. 새 유료 작업으로 자동 대체하지 않습니다.",
+                    "value": {
+                      "detail": {
+                        "code": "comfy_invalid_response",
+                        "message": "Comfy 그림 응답을 확인하지 못했어요."
+                      }
+                    }
+                  },
+                  "comfy_asset_host_not_allowed": {
+                    "summary": "comfy_asset_host_not_allowed",
+                    "description": "관리자가 실제 자산 호스트를 검증하고 COMFY_ASSET_ALLOWED_HOSTS에 등록합니다. 이후 같은 작업을 이어받습니다.",
+                    "value": {
+                      "detail": {
+                        "code": "comfy_asset_host_not_allowed",
+                        "message": "그림은 생성됐지만 저장소 주소가 허용되지 않았어요."
+                      }
+                    }
+                  },
+                  "comfy_download_failed": {
+                    "summary": "comfy_download_failed",
+                    "description": "다시 요청하면 자산 메타데이터의 새 서명 URL로 다운로드를 재시도합니다.",
+                    "value": {
+                      "detail": {
+                        "code": "comfy_download_failed",
+                        "message": "Comfy 그림 파일을 내려받지 못했어요."
+                      }
+                    }
+                  },
+                  "ai_rate_limited": {
+                    "summary": "ai_rate_limited",
+                    "description": "OpenAI 계정의 API 결제·사용 한도를 확인한 뒤 재시도합니다.",
+                    "value": {
+                      "detail": {
+                        "code": "ai_rate_limited",
+                        "message": "OpenAI API 사용 한도 또는 요청 제한에 도달했습니다."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "발생 조건과 처리 방법:\n\n- **ai_timeout**: GPT 응답 시간이 초과되었습니다. 기존 데이터를 조회해 상태를 확인한 뒤 재시도합니다. 제공자 처리·과금 여부와 로컬 저장 성공은 별개입니다.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "ai_timeout": {
+                    "summary": "ai_timeout",
+                    "description": "기존 데이터를 조회해 상태를 확인한 뒤 재시도합니다. 제공자 처리·과금 여부와 로컬 저장 성공은 별개입니다.",
+                    "value": {
+                      "detail": {
+                        "code": "ai_timeout",
+                        "message": "GPT 응답 시간이 초과되었습니다."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "처리 완료. 응답의 의미와 다음 동작은 위 설명을 참고하세요.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudioImagePreparation"
+                },
+                "examples": {
+                  "success": {
+                    "summary": "가상 자료의 성공 응답 예시",
+                    "value": {
+                      "document": {
+                        "projectId": "project-example",
+                        "saveRevision": 0,
+                        "contentRevision": 0,
+                        "basedOnStructureRevision": 0,
+                        "basedOnSettingsRevision": 0,
+                        "title": "보증금을 돌려주라는 법원의 결정",
+                        "subtitle": "API 설명을 위한 가상 자료입니다.",
+                        "partyNames": [
+                          {
+                            "partyId": "party-a",
+                            "displayName": "A씨"
+                          },
+                          {
+                            "partyId": "party-b",
+                            "displayName": "B씨"
+                          }
+                        ],
+                        "sections": [
+                          {
+                            "kind": "people",
+                            "title": "등장인물",
+                            "cards": []
+                          },
+                          {
+                            "kind": "decision",
+                            "title": "법원이 정한 것",
+                            "cards": [
+                              {
+                                "id": "card-1",
+                                "role": "decision",
+                                "partyId": null,
+                                "imageId": null,
+                                "sentences": [
+                                  {
+                                    "id": "sentence-1",
+                                    "text": "법원은 B씨에게 A씨의 보증금 1,000만 원을 돌려주라고 결정했어요.",
+                                    "anchors": [
+                                      {
+                                        "paragraphId": "p1",
+                                        "start": 125,
+                                        "end": 165
+                                      }
+                                    ],
+                                    "origin": "ai-draft",
+                                    "verified": false
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "kind": "reasons",
+                            "title": "사건의 내용과 이유",
+                            "cards": []
+                          },
+                          {
+                            "kind": "glossary",
+                            "title": "어려운 말 풀이",
+                            "cards": []
+                          }
+                        ],
+                        "glossary": [],
+                        "images": []
+                      },
+                      "project": {
+                        "id": "project-example",
+                        "title": "가상 임대차보증금 반환 사건 쉬운 설명자료",
+                        "createdAt": "2026-09-14T09:00:00Z",
+                        "updatedAt": "2026-09-14T09:00:00Z",
+                        "settings": {
+                          "tone": "haeyo",
+                          "naming": "initial",
+                          "illustrations": "with"
+                        },
+                        "settingsRevision": 0,
+                        "source": {
+                          "kind": "text",
+                          "fileName": null,
+                          "byteSize": null,
+                          "charCount": 165
+                        },
+                        "caseNumber": null,
+                        "structureRevision": 0,
+                        "document": {
+                          "saveRevision": 0,
+                          "contentRevision": 0,
+                          "basedOnStructureRevision": 0,
+                          "basedOnSettingsRevision": 0,
+                          "sentenceCount": 1,
+                          "verifiedCount": 0
+                        },
+                        "review": {
+                          "checkedContentRevision": null,
+                          "openRequiredCount": null,
+                          "completedContentRevision": null,
+                          "completedAt": null
+                        },
+                        "publication": {
+                          "latestVersion": null,
+                          "latestContentRevision": null,
+                          "publicPublicationId": null,
+                          "publicVersion": null
+                        }
+                      },
+                      "generation": {
+                        "status": "running",
+                        "phase": "scenes",
+                        "completed": 0,
+                        "total": 4,
+                        "currentCardId": "card-1"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "### 프론트 호출 시점\n\n편집 페이지 진입 직후 자동으로 호출합니다. 카드마다 사용자가 생성·선택할 필요가 없습니다.\n\n### 요청 방법\n\nproject_id만 지정하고 본문은 없습니다. document/generate로 글을 먼저 만듭니다.\n\n### 응답 해석\n\n{document,project,generation:{status,phase,completed,total,currentCardId}}를 반환합니다. running이면 같은 POST를 이어 호출합니다. ready는 전체 적용 완료, skipped는 그림 없음 설정 또는 demo 모드입니다.\n\n### 저장·버전·외부 호출 영향\n\n요청당 최대 카드 한 개를 생성·자동 저장하므로 Vercel 백그라운드 스레드에 의존하지 않습니다. 모든 인물 초상을 먼저 Schnell로 만들고 고정한 다음, 그 참조로 Qwen Edit 장면을 생성합니다. 인물 그림 교체·삭제는 서버에서도 막습니다. 완료된 일괄 작업을 반복 호출하거나 장면 그림을 나중에 제거해도 자동 재생성하지 않습니다. 글·장면·대체텍스트 편집과 제작자 검토는 유지합니다. 새로고침은 완료 카드를 건너뛰며 진행 중 Comfy 작업을 재조회합니다. 접수 불확실·실패는 유료 작업을 자동 재제출하지 않습니다. 초안 재생성은 인물 그림을 유지하고 새 장면의 일괄 작업을 초기화합니다.\n\n### 다음 동작\n\nready/skipped 뒤 최신 document와 project를 캐시에 넣고 편집기를 엽니다. 진행 중에는 phase와 completed/total을 표시하고 편집·자동 저장을 시작하지 않습니다. 오류 시 중단하고 사용자에게 표시합니다. 프론트 취소는 원격 유료 작업 취소가 아니며 다음 진입에 이어받습니다.\n\n**인증:** 제작자 Bearer 토큰이 필요합니다. 다른 제작자의 자료에는 접근할 수 없습니다."
       }
     },
     "/api/studio/projects/{project_id}/assist/simplify": {
@@ -4188,6 +4753,38 @@
               }
             }
           },
+          "409": {
+            "description": "발생 조건과 처리 방법:\n\n- **character_locked**: 등장인물 기준 그림은 고정돼 있어요. 인물 그림의 교체·삭제와 인물 카드 제거는 불가합니다. 문장과 장면 그림, 대체텍스트는 편집할 수 있습니다. 초안 재생성도 기존 인물 그림을 유지합니다.\n\n- **image_card_changed**: 생성 중 카드 내용이 바뀌었어요. 현재 문서를 다시 조회하고 새 내용으로 그림을 요청합니다. 새 내용은 새 생성 작업이 될 수 있습니다.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "character_locked": {
+                    "summary": "character_locked",
+                    "description": "인물 그림의 교체·삭제와 인물 카드 제거는 불가합니다. 문장과 장면 그림, 대체텍스트는 편집할 수 있습니다. 초안 재생성도 기존 인물 그림을 유지합니다.",
+                    "value": {
+                      "detail": {
+                        "code": "character_locked",
+                        "message": "등장인물 기준 그림은 고정돼 있어요."
+                      }
+                    }
+                  },
+                  "image_card_changed": {
+                    "summary": "image_card_changed",
+                    "description": "현재 문서를 다시 조회하고 새 내용으로 그림을 요청합니다. 새 내용은 새 생성 작업이 될 수 있습니다.",
+                    "value": {
+                      "detail": {
+                        "code": "image_card_changed",
+                        "message": "생성 중 카드 내용이 바뀌었어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
           "413": {
             "description": "발생 조건과 처리 방법:\n\n- **image_limit**: 자료의 그림 개수 또는 용량 한도를 넘었어요. 자료당 보관 그림 100개·src 합계 12MiB 제한입니다. 문서에서 그림 연결만 빼도 보관 자산은 삭제되지 않습니다.\n\n- **image_too_large**: 그림의 용량 또는 해상도 제한을 넘었어요. 업로드는 2MiB, 생성 파일은 5MiB, 래스터 해상도는 1,600만 화소 이하로 준비합니다.\n\n- **ai_input_too_large**: AI 입력이 너무 큽니다. 원문·구조·입력 등을 합친 직렬화 JSON이 200,000자를 넘지 않도록 자료를 나눕니다.\n\n- **request_too_large**: 요청은 최대 5MB입니다. HTTP 요청 본문 전체를 줄입니다. 파일 자체 한도는 이보다 작을 수 있습니다.\n",
             "content": {
@@ -4329,28 +4926,6 @@
                           "input": {}
                         }
                       ]
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "발생 조건과 처리 방법:\n\n- **image_card_changed**: 생성 중 카드 내용이 바뀌었어요. 현재 문서를 다시 조회하고 새 내용으로 그림을 요청합니다. 새 내용은 새 생성 작업이 될 수 있습니다.\n",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "image_card_changed": {
-                    "summary": "image_card_changed",
-                    "description": "현재 문서를 다시 조회하고 새 내용으로 그림을 요청합니다. 새 내용은 새 생성 작업이 될 수 있습니다.",
-                    "value": {
-                      "detail": {
-                        "code": "image_card_changed",
-                        "message": "생성 중 카드 내용이 바뀌었어요."
-                      }
                     }
                   }
                 }
@@ -4674,7 +5249,7 @@
             }
           }
         },
-        "description": "### 프론트 호출 시점\n\n편집기의 카드 → 그림 넣기/바꾸기 → 그림 후보 보기에서 호출합니다.\n\n### 요청 방법\n\nJSON {cardId}를 보냅니다. 카드 문장·원문 근거·당사자 표시 이름은 저장된 문서에서 읽으므로 자동 저장 완료 후 요청하세요. 프롬프트·워크플로·jobId는 FE에서 보내지 않습니다.\n\n### 응답 해석\n\n{candidates:[{src,alt,meaning}]}를 반환합니다. 실제 AI 모드에서는 해당 카드의 Comfy 결과 1장이 먼저, 업로드 자산이 이어집니다. 생성 결과 src는 서버가 보관한 PNG의 주소(/api/studio/assets/{id})입니다. 예시의 작은 PNG는 형식 설명용이며 실제 생성 품질 예시가 아닙니다.\n\n### 저장·버전·외부 호출 영향\n\n먼저 등장인물(role=person, partyId 지정) 카드에서 그림을 생성·선택하고 PUT document로 저장하세요. 결론·주장·판단·배경 그림을 요청하면 서버가 document.images와 인물 카드의 imageId를 연결해 저장된 기준 그림을 찾습니다. 후보만 생성하고 적용하지 않은 그림은 기준으로 쓰지 않습니다.\n\nOpenAI에는 대상 문장·원문 근거와 등장인물의 이름·역할·저장된 설명, 기준 그림 번호를 함께 전달합니다. 누가 누구에게 무엇을 해야 하는지와 주장·판단·결정을 구분해 장면을 설계합니다. 기준 그림은 OpenAI 이미지 입력으로 읽어 얼굴·머리·수염 유무·상의·하의·신발을 고정 외형으로 저장합니다. 같은 소유자·프로젝트·자산의 동일 픽셀은 분석 결과를 재사용합니다. 생성 결과를 외형 검사로 차단하거나 자동 보정하지 않고 후보로 반환합니다. 이전 외형 검사에서 제외된 작업도 같은 요청으로 기존 결과를 다시 조회합니다. 한 사람을 특정할 수 없는 기준 그림은 422 character_reference_unclear입니다. 외형 유지 지시가 완벽한 일치를 보장하지 않으므로 후보를 직접 확인합니다. 카드의 partyId와 문장·원문 근거의 이름·역할 언급으로 관련 인물 참조를 선택하고 그림 번호를 다시 매깁니다. 인물을 특정할 수 없으면 모든 참조를 유지합니다. 실제 PNG·JPEG·WebP 픽셀을 Comfy에 업로드하여 Qwen-Image-Edit-2511의 TextEncodeQwenImageEditPlus에 시각 입력과 VAE 참조로 전달합니다. 장면당 최대 3개이며 초과 시 422 character_reference_limit로 유료 장면 설계·생성 전에 중단합니다. 프로젝트 전체 기준 그림 제한은 6개입니다. 새 인물을 그리지 않고 참조의 외형·옷·색을 유지한 채 자세·장면만 편집하도록 지시합니다. 출력은 첫 참조 비율을 약 1MP로 정규화하며 정사각형이면 1024×1024입니다. Lightning LoRA 없이 20 steps, CFG 4로 한 장을 생성합니다. 인물 카드 자체를 생성할 때는 기존 FLUX Schnell (768×768, 4 steps)을 유지합니다. 일반 장면에 저장된 기준 그림이 없으면 FLUX.2 Dev의 텍스트 기반 생성을 사용합니다. 기존 4-step 모델보다 생성 시간과 GPU 사용량이 증가할 수 있습니다. 실행 전 모델·노드 가용성을 검사하고, 이전 버전에 접수한 작업은 저장된 워크플로우로 재생성 없이 이어서 조회합니다. 외형 일치나 관계의 정확성을 자동 보증하지는 않습니다.\n\n같은 카드와 등장인물 기준은 저장/진행 작업을 재사용합니다. 인물 설명·역할·기준 그림을 바꾸면 다음 요청은 새 생성이 될 수 있고, 이전 결론 그림을 자동 교체하지 않습니다. 데모는 업로드 후보만 반환합니다. 후보는 프로젝트 자산으로 보관하지만 문서에 자동 연결하지 않습니다.\n\nComfy 완료 대기 90초 후 image_in_progress이면 같은 요청으로 이어서 확인합니다. 접수 불확실·실행 실패·만료는 새 유료 작업을 자동 제출하지 않습니다. 생성 중 카드나 등장인물 기준이 바뀌면 image_card_changed로 오래된 후보 적용을 막습니다. 브라우저 요청 취소가 제공자 작업 취소를 뜻하지는 않습니다.\n\n### 다음 동작\n\n사용자가 고른 후보에 FE 그림 ID와 source=library를 부여하고 document.images에 넣습니다. 대상 card.imageId를 연결한 뒤 PUT document로 저장하세요. alt와 meaning은 실제 그림과 대조합니다. 편집 중 FE가 이전 후보를 캐시했다면 최신 내용 저장 후 새 요청이 실제 전송되도록 새로고침합니다.\n\n**인증:** 제작자 Bearer 토큰이 필요합니다. 다른 제작자의 자료에는 접근할 수 없습니다."
+        "description": "### 프론트 호출 시점\n\n편집기의 카드 → 그림 넣기/바꾸기 → 그림 후보 보기에서 호출합니다.\n\n### 요청 방법\n\nJSON {cardId}를 보냅니다. 카드 문장·원문 근거·당사자 표시 이름은 저장된 문서에서 읽으므로 자동 저장 완료 후 요청하세요. 프롬프트·워크플로·jobId는 FE에서 보내지 않습니다.\n\n### 응답 해석\n\n{candidates:[{src,alt,meaning}]}를 반환합니다. 실제 AI 모드에서는 해당 카드의 Comfy 결과 1장이 먼저, 업로드 자산이 이어집니다. 생성 결과 src는 서버가 보관한 PNG의 주소(/api/studio/assets/{id})입니다. 예시의 작은 PNG는 형식 설명용이며 실제 생성 품질 예시가 아닙니다.\n\n### 저장·버전·외부 호출 영향\n\n편집 진입 시 prepare-images가 등장인물(role=person, partyId 지정)을 먼저 자동 생성·저장하고 고정합니다. 이후 장면 그림을 변경할 때 이 API를 사용합니다. 결론·주장·판단·배경 그림을 요청하면 서버가 document.images와 인물 카드의 imageId를 연결해 저장된 기준 그림을 찾습니다. 후보만 생성하고 적용하지 않은 그림은 기준으로 쓰지 않습니다.\n\nOpenAI에는 대상 문장·원문 근거와 등장인물의 이름·역할·저장된 설명, 기준 그림 번호를 함께 전달합니다. 누가 누구에게 무엇을 해야 하는지와 주장·판단·결정을 구분해 장면을 설계합니다. 기준 그림은 OpenAI 이미지 입력으로 읽어 얼굴·머리·수염 유무·상의·하의·신발을 고정 외형으로 저장합니다. 같은 소유자·프로젝트·자산의 동일 픽셀은 분석 결과를 재사용합니다. 생성 결과를 외형 검사로 차단하거나 자동 보정하지 않고 후보로 반환합니다. 이전 외형 검사에서 제외된 작업도 같은 요청으로 기존 결과를 다시 조회합니다. 한 사람을 특정할 수 없는 기준 그림은 422 character_reference_unclear입니다. 외형 유지 지시가 완벽한 일치를 보장하지 않으므로 후보를 직접 확인합니다. 카드의 partyId와 문장·원문 근거의 이름·역할 언급으로 관련 인물 참조를 선택하고 그림 번호를 다시 매깁니다. 인물을 특정할 수 없으면 모든 참조를 유지합니다. 실제 PNG·JPEG·WebP 픽셀을 Comfy에 업로드하여 Qwen-Image-Edit-2511의 TextEncodeQwenImageEditPlus에 시각 입력과 VAE 참조로 전달합니다. 장면당 최대 3개이며 초과 시 422 character_reference_limit로 유료 장면 설계·생성 전에 중단합니다. 프로젝트 전체 기준 그림 제한은 6개입니다. 새 인물을 그리지 않고 참조의 외형·옷·색을 유지한 채 자세·장면만 편집하도록 지시합니다. 출력은 첫 참조 비율을 약 1MP로 정규화하며 정사각형이면 1024×1024입니다. Lightning LoRA 없이 20 steps, CFG 4로 한 장을 생성합니다. 인물 카드 자체를 생성할 때는 기존 FLUX Schnell (768×768, 4 steps)을 유지합니다. 일반 장면에 저장된 기준 그림이 없으면 FLUX.2 Dev의 텍스트 기반 생성을 사용합니다. 기존 4-step 모델보다 생성 시간과 GPU 사용량이 증가할 수 있습니다. 실행 전 모델·노드 가용성을 검사하고, 이전 버전에 접수한 작업은 저장된 워크플로우로 재생성 없이 이어서 조회합니다. 외형 일치나 관계의 정확성을 자동 보증하지는 않습니다.\n\n같은 카드와 등장인물 기준은 저장/진행 작업을 재사용합니다. 인물 설명·역할·기준 그림을 바꾸면 다음 요청은 새 생성이 될 수 있고, 이전 결론 그림을 자동 교체하지 않습니다. 데모는 업로드 후보만 반환합니다. 후보는 프로젝트 자산으로 보관하지만 문서에 자동 연결하지 않습니다.\n\nComfy 완료 대기 90초 후 image_in_progress이면 같은 요청으로 이어서 확인합니다. 접수 불확실·실행 실패·만료는 새 유료 작업을 자동 제출하지 않습니다. 생성 중 카드나 등장인물 기준이 바뀌면 image_card_changed로 오래된 후보 적용을 막습니다. 브라우저 요청 취소가 제공자 작업 취소를 뜻하지는 않습니다.\n\n### 다음 동작\n\n사용자가 고른 후보에 FE 그림 ID와 source=library를 부여하고 document.images에 넣습니다. 대상 card.imageId를 연결한 뒤 PUT document로 저장하세요. alt와 meaning은 실제 그림과 대조합니다. 편집 중 FE가 이전 후보를 캐시했다면 최신 내용 저장 후 새 요청이 실제 전송되도록 새로고침합니다.\n\n**인증:** 제작자 Bearer 토큰이 필요합니다. 다른 제작자의 자료에는 접근할 수 없습니다."
       }
     },
     "/api/studio/projects/{project_id}/assist/upload-image": {
@@ -9043,6 +9618,74 @@
         "required": [
           "document",
           "project"
+        ],
+        "additionalProperties": false
+      },
+      "StudioImagePreparation": {
+        "type": "object",
+        "description": "편집 진입 시 서버가 생성한 그림을 자동 적용한 최신 문서와 진행 상태입니다.",
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/EasyDocument"
+          },
+          "project": {
+            "$ref": "#/components/schemas/StudioProject"
+          },
+          "generation": {
+            "type": "object",
+            "description": "동일 POST로 이어받는 일괄 생성 상태입니다.",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "running",
+                  "ready",
+                  "skipped"
+                ]
+              },
+              "phase": {
+                "type": "string",
+                "enum": [
+                  "portraits",
+                  "scenes",
+                  "complete"
+                ]
+              },
+              "completed": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "total": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "currentCardId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "경로 project_id와 동일한 자료 ID입니다. 다른 자료의 ID로 바꾸면 저장할 수 없습니다."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "status",
+              "phase",
+              "completed",
+              "total",
+              "currentCardId"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "document",
+          "project",
+          "generation"
         ],
         "additionalProperties": false
       },

@@ -13,10 +13,11 @@ from .models import uid
 from .sources import MAX_PDF_BYTES, extract_pdf, source_from_pages
 from .store import fail
 from .studio_domain import (apply_naming, invalidate_review, reader_content, require_document, review_items,
-                            sentences, structure_content, summarize_document, sync_review, timestamp, validate_document, validate_structure)
+                            cards, sentences, structure_content, summarize_document, sync_review, timestamp, validate_document, validate_structure)
 from .studio_store import StudioStore, asset_size, asset_url
 from .studio_images import MAX_UPLOAD, cleaned_upload
 from .studio_generation import StudioGeneration
+from .studio_batch import StudioBatch, preserve_portraits, validate_portrait_locks
 
 SAMPLE_TEXT = """사건: 데모용 가상 임대차보증금 반환 사건. 실제 사건이나 법원의 판결이 아닙니다.
 
@@ -38,6 +39,7 @@ def register_studio(api, config, base_store, provider, owner):
     api.state.studio = store
     generation = StudioGeneration(store, config, provider)
     api.state.studio_generation = generation
+    batch = StudioBatch(generation)
     router = APIRouter(prefix="/api/studio", tags=["FE 연동"])
     Owner = Annotated[str, Depends(owner)]
 
@@ -126,6 +128,8 @@ def register_studio(api, config, base_store, provider, owner):
                 current["structureRevision"] = state["structure"]["revision"]
             current["settings"] = new
             current["settingsRevision"] += 1
+            if state.get("image_batch", {}).get("status") == "skipped":
+                state.pop("image_batch", None)
             changed_context(state)
             store.save(state, maker, version)
         return current
@@ -167,6 +171,7 @@ def register_studio(api, config, base_store, provider, owner):
         state, version = state_for(project_id, maker)
         previous = state["document"]
         draft = wire.DraftContent.model_validate(studio_provider.draft(provider, state)).model_dump()
+        preserve_portraits(state, draft)
         # AI cannot pre-approve sentences or attach arbitrary external assets.
         for sentence in sentences(draft):
             sentence.update(verified=False, origin="ai-draft")
@@ -176,6 +181,7 @@ def register_studio(api, config, base_store, provider, owner):
             "contentRevision": previous["contentRevision"] + 1 if previous else 0,
             "basedOnStructureRevision": state["structure"]["revision"],
             "basedOnSettingsRevision": state["project"]["settingsRevision"]}
+        state.pop("image_batch", None)
         clear_review(state)
         result = document_result(state)
         store.save(state, maker, version)
@@ -185,6 +191,10 @@ def register_studio(api, config, base_store, provider, owner):
     def document(project_id: str, maker: Owner):
         return require_document(state_for(project_id, maker)[0])
 
+    @router.post("/projects/{project_id}/document/prepare-images")
+    def prepare_images(project_id: str, maker: Owner):
+        return batch.prepare(project_id, maker)
+
     @router.put("/projects/{project_id}/document")
     def save_document(project_id: str, body: wire.EasyDocument, maker: Owner):
         state, version = state_for(project_id, maker)
@@ -193,6 +203,7 @@ def register_studio(api, config, base_store, provider, owner):
             fail(422, "invalid_project", "자료 ID가 다릅니다.")
         if new["saveRevision"] != previous["saveRevision"]:
             fail(409, "version_conflict", "다른 문서가 저장됐어요. 새로고침해 주세요.")
+        validate_portrait_locks(state, new)
         validate_document(new, state)
         content_changed = reader_content(previous, state) != reader_content(new, state)
         new.update(saveRevision=previous["saveRevision"] + 1,
@@ -200,6 +211,8 @@ def register_studio(api, config, base_store, provider, owner):
                    basedOnStructureRevision=previous["basedOnStructureRevision"],
                    basedOnSettingsRevision=previous["basedOnSettingsRevision"])
         state["document"] = new
+        for portrait in state.get("locked_portraits", {}).values():
+            portrait["image"] = copy.deepcopy(next(i for i in new["images"] if i["id"] == portrait["image"]["id"]))
         clear_review(state)
         result = document_result(state)
         store.save(state, maker, version)
@@ -241,6 +254,10 @@ def register_studio(api, config, base_store, provider, owner):
 
     @router.post("/projects/{project_id}/assist/images")
     def image_candidates(project_id: str, body: wire.ImageInput, maker: Owner):
+        state = state_for(project_id, maker)[0]
+        card = next((c for c in cards(require_document(state)) if c["id"] == body.cardId), None)
+        if card and card["role"] == "person" and card["partyId"] in state.get("locked_portraits", {}):
+            fail(409, "character_locked", "등장인물의 기준 그림은 고정돼 있어요. 장면 그림은 바꿀 수 있어요.")
         return generation.candidates(project_id, maker, body.cardId)
 
     @router.post("/projects/{project_id}/assist/upload-image")

@@ -22,6 +22,7 @@ def test_only_frontend_routes_are_served(client):
         "/projects/{project_id}/structure": {"get", "put"},
         "/projects/{project_id}/document": {"get", "put"},
         "/projects/{project_id}/document/generate": {"post"},
+        "/projects/{project_id}/document/prepare-images": {"post"},
         "/projects/{project_id}/review": {"get"},
         "/projects/{project_id}/publications": {"get", "post"},
         "/projects/{project_id}/publications/{publication_id}": {"get"},

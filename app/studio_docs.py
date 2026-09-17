@@ -19,8 +19,8 @@ API_DESCRIPTION = """
 | --- | --- | --- |
 | 1. 자료 만들기 | `POST /projects/text` 또는 `/projects/pdf` | 분석과 저장이 끝나면 `201`과 `project` 객체를 반환합니다. `id`를 보관합니다. |
 | 2. 원문·구조 확인 | `GET /projects/{id}/source`, `/structure` | 원문 문단과 추출한 사건 구조를 보여 줍니다. 수정한 구조는 `PUT /structure`로 저장합니다. |
-| 3. 쉬운 글 생성 | `POST /projects/{id}/document/generate` | 완료된 `{document, project}`를 반환합니다. 초안 생성만으로 모든 그림을 생성하지는 않습니다. |
-| 4. 편집·그림 | 문장 보조 API, `POST /assist/images`, `PUT /document` | 제안·그림 후보를 사용자가 선택한 뒤 문서 전체를 저장합니다. |
+| 3. 쉬운 글 생성 | `POST /projects/{id}/document/generate` | 완료된 `{document, project}`를 반환합니다. 편집 진입 시 POST document/prepare-images를 이어 호출해 모든 카드 그림을 자동 생성·적용합니다. |
+| 4. 편집·그림 | `POST /document/prepare-images` 후 문장 보조·`POST /assist/images`·`PUT /document` | 진입 시 모든 그림을 자동 적용하고 인물만 고정합니다. 이후 글·장면을 편집합니다. |
 | 5. 검토 | `POST /review/run` → 항목 확인 → `POST /review/complete` | 규칙 점검과 제작자의 원문·그림 대조를 구분합니다. 미처리 required 항목이 없어야 완료할 수 있습니다. |
 | 6. 게시·공개 | `POST /publications` → `PUT /public` | 게시본 생성과 외부 공개는 별도 동작입니다. 공개할 검토 완료 게시본 ID를 지정합니다. |
 | 7. 독자 조회 | `GET /reader/{id}` | 인증 없이 공개 게시본을 읽습니다. 미공개·삭제·자료 없음은 모두 `200 {"status":"unavailable"}`입니다. |
@@ -98,6 +98,7 @@ Comfy 접수 결과가 불확실하거나 작업이 실패·만료되면 자동�
 """
 
 ERRORS = {
+    "character_locked": (409, "등장인물 기준 그림은 고정돼 있어요.", "인물 그림의 교체·삭제와 인물 카드 제거는 불가합니다. 문장과 장면 그림, 대체텍스트는 편집할 수 있습니다. 초안 재생성도 기존 인물 그림을 유지합니다."),
     "unauthorized": (401, "유효한 Bearer 토큰이 필요합니다.", "토큰이 없거나 형식이 맞지 않습니다(익명 모드: 영문·숫자·._~- 16자 이상). keys 모드에서는 API_KEYS에 등록한 토큰이어야 합니다."),
     "not_found": (404, "자료 또는 요청한 항목을 찾을 수 없어요.", "ID·소유권·삭제 여부를 확인합니다. 문서 API는 초안 생성 전에도 404입니다."),
     "version_conflict": (409, "다른 편집이 저장됐어요. 새로고침 후 다시 시도해 주세요.", "최신 자료를 GET하고 변경 내용을 합친 뒤 최신 버전으로 다시 저장합니다."),
@@ -207,7 +208,7 @@ describe("rename", "자료 제목 변경 — 작업함 이름만 수정",
 describe("settings", "제작 설정 저장 — 문체·호칭·그림 표시 변경",
     "제작 설정에서 문체, 당사자 부르는 방식, 그림 포함 여부를 변경할 때 호출합니다.", "Settings의 tone·naming·illustrations를 모두 보냅니다. 부분 PATCH가 아닙니다. 별도의 expectedRevision 입력은 없습니다.",
     "갱신된 project를 반환합니다. 실제 변경 시 settingsRevision이 증가하며 naming 변경은 structureRevision도 증가시킵니다. 동일한 설정을 보내면 그대로 반환합니다.",
-    "설정 변경 시 기존 문서가 있으면 saveRevision/contentRevision이 증가하고 현재 검토를 해제합니다. naming은 구조의 표시 이름을 바꾸지만 기존 문장·문서 partyNames를 자동 재작성하지 않습니다. with는 그림 표시 설정이며 자동 일괄 생성 명령이 아닙니다.",
+    "설정 변경 시 기존 문서가 있으면 saveRevision/contentRevision이 증가하고 현재 검토를 해제합니다. naming은 구조의 표시 이름을 바꾸지만 기존 문장·문서 partyNames를 자동 재작성하지 않습니다. with는 그림 표시 설정이며 편집 진입 시 prepare-images로 자동 일괄 생성합니다.",
     "문서가 열려 있으면 최신 project·structure·document를 다시 읽으세요. 새 기준을 기존 글에 직접 반영하거나 필요할 때 초안을 재생성하고 재검토합니다.", ref("StudioProject"), {**ex.DRAFT_PROJECT, "settingsRevision": 1}, errors="not_found version_conflict", body=ex.SETTINGS)
 describe("remove", "자료 삭제 — 작업함 제외 및 공개 읽기 중단",
     "제작자가 해당 자료를 삭제할 때 호출합니다.", "project_id만 지정합니다. 요청 본문은 없습니다.", "성공 응답은 204이며 JSON 본문이 없습니다. 응답에 response.json()을 호출하지 마세요.",
@@ -230,9 +231,17 @@ describe("save_structure", "사건 구조 저장 — 전체 구조 교체 및 �
     "응답의 새 버전을 반영하고 문서도 다시 조회하세요. 초안 기준 버전과 현재 구조가 다르면 직접 반영하거나 명시적으로 재생성 후 검토합니다.", ref("StudioStructureResult"), {"structure": ex.STRUCTURE, "project": ex.PROJECT}, errors="not_found version_conflict invalid_project " + STRUCTURE_ERRORS, body=ex.STRUCTURE)
 describe("generate", "쉬운 글 초안 생성 — 완료된 문서와 프로젝트 반환",
     "사건 구조 확인 후 처음 초안을 만들거나 기존 초안을 명시적으로 다시 만들 때 호출합니다.", "project_id만 보내며 본문은 없습니다. 현재 DB에 저장된 원문·사건 구조·설정을 기준으로 생성하므로 구조 수정을 먼저 저장하세요.",
-    "200과 {document, project}를 반환합니다. document에는 네 구획, 카드별 문장, 근거, 당사자 이름, 용어 풀이 등이 들어갑니다. 작업 ID가 아니라 완료된 문서입니다. 실제 AI 초안의 images는 빈 배열이고 imageId는 null입니다.",
+    "200과 {document, project}를 반환합니다. document에는 네 구획, 카드별 문장, 근거, 당사자 이름, 용어 풀이 등이 들어갑니다. 작업 ID가 아니라 완료된 문서입니다. 첫 초안의 images는 빈 배열이고 imageId는 null입니다. 재생성 시 고정된 인물 그림은 유지합니다.",
     "OpenAI 모드는 실제 생성, demo는 원문 복사입니다. 서버는 모든 새 문장에 origin=ai-draft·verified=false를 강제합니다. 처음 버전은 0이고 재생성은 기존 편집 문서를 교체하며 saveRevision/contentRevision을 각각 증가시키고 검토를 해제합니다. 실패하면 기존 문서를 보존합니다.",
-    "반환한 document를 편집기에, project를 진행 상태에 반영하세요. 필요한 카드에서 assist/images를 호출하고 사용자 선택 후 PUT document로 저장합니다. 재호출은 새 생성이므로 중복 클릭을 막으세요.", ref("StudioDocumentResult"), {"document": ex.DOCUMENT, "project": ex.DRAFT_PROJECT}, errors="not_found version_conflict " + DOCUMENT_ERRORS + " " + AI_ERRORS)
+    "반환한 document를 편집기에, project를 진행 상태에 반영하세요. 편집 진입 시 document/prepare-images를 완료까지 이어 호출하면 인물과 장면 그림을 자동 생성·적용합니다. 이후 장면 변경만 assist/images와 PUT document로 처리합니다. 재호출은 새 생성이므로 중복 클릭을 막으세요.", ref("StudioDocumentResult"), {"document": ex.DOCUMENT, "project": ex.DRAFT_PROJECT}, errors="not_found version_conflict character_locked " + DOCUMENT_ERRORS + " " + AI_ERRORS)
+describe("prepare_images", "편집 진입 그림 일괄 생성 — 인물 먼저 생성·고정 후 장면 자동 적용",
+    "편집 페이지 진입 직후 자동으로 호출합니다. 카드마다 사용자가 생성·선택할 필요가 없습니다.",
+    "project_id만 지정하고 본문은 없습니다. document/generate로 글을 먼저 만듭니다.",
+    "{document,project,generation:{status,phase,completed,total,currentCardId}}를 반환합니다. running이면 같은 POST를 이어 호출합니다. ready는 전체 적용 완료, skipped는 그림 없음 설정 또는 demo 모드입니다.",
+    "요청당 최대 카드 한 개를 생성·자동 저장하므로 Vercel 백그라운드 스레드에 의존하지 않습니다. 모든 인물 초상을 먼저 Schnell로 만들고 고정한 다음, 그 참조로 Qwen Edit 장면을 생성합니다. 인물 그림 교체·삭제는 서버에서도 막습니다. 완료된 일괄 작업을 반복 호출하거나 장면 그림을 나중에 제거해도 자동 재생성하지 않습니다. 글·장면·대체텍스트 편집과 제작자 검토는 유지합니다. 새로고침은 완료 카드를 건너뛰며 진행 중 Comfy 작업을 재조회합니다. 접수 불확실·실패는 유료 작업을 자동 재제출하지 않습니다. 초안 재생성은 인물 그림을 유지하고 새 장면의 일괄 작업을 초기화합니다.",
+    "ready/skipped 뒤 최신 document와 project를 캐시에 넣고 편집기를 엽니다. 진행 중에는 phase와 completed/total을 표시하고 편집·자동 저장을 시작하지 않습니다. 오류 시 중단하고 사용자에게 표시합니다. 프론트 취소는 원격 유료 작업 취소가 아니며 다음 진입에 이어받습니다.",
+    ref("StudioImagePreparation"), {"document": ex.DOCUMENT, "project": ex.DRAFT_PROJECT, "generation": {"status": "running", "phase": "scenes", "completed": 0, "total": 4, "currentCardId": "card-1"}},
+    errors="not_found version_conflict character_locked character_reference_limit image_card_changed invalid_party image_limit image_missing_output character_reference_invalid character_reference_ambiguous character_reference_unclear comfy_not_configured comfy_auth_error comfy_insufficient_credits comfy_rate_limited comfy_workflow_unavailable image_submission_unknown comfy_connection_or_response_error comfy_invalid_response comfy_asset_host_not_allowed comfy_download_failed image_generation_failed " + AI_ERRORS)
 describe("document", "편집 문서 조회 — 최신 본문과 저장 버전",
     "편집 화면을 열거나 새로고침·저장 충돌 후 최신 문서를 읽을 때 호출합니다.", "project_id를 지정하며 요청 본문은 없습니다. 자료를 만들기만 하고 초안을 생성하지 않았다면 404입니다.",
     "EasyDocument 객체 자체를 반환합니다. project 요약 래퍼는 없습니다. sections는 people→decision→reasons→glossary 순서이며 문장마다 근거·origin·verified가 있습니다.",
@@ -242,7 +251,7 @@ describe("save_document", "편집 문서 저장 — 자동 저장·버전 충돌
     "직접 편집, AI 제안 적용, 그림 선택·업로드 적용, 원문 대조 표시 변경 후 자동 저장할 때 호출합니다.", "EasyDocument 전체를 보냅니다. projectId와 직전 saveRevision을 유지하고 네 구획 및 참조 목록을 모두 포함하세요. 부분 PATCH가 아닙니다. 카드의 imageId는 images[].id와 연결하고 src는 이 프로젝트에 이미 보관된 그림이어야 합니다.",
     "{document, project}를 반환합니다. 성공할 때마다 saveRevision이 증가합니다. contentRevision은 독자용 내용이 바뀐 경우에만 서버가 증가시키며 클라이언트가 보낸 임의 버전은 무시합니다.",
     "저장 시 현재 점검과 검토 완료를 해제합니다. 대조 표시/근거만 바뀌면 contentRevision이 같아도 검토는 다시 해야 합니다. basedOnStructureRevision·basedOnSettingsRevision은 이전 초안의 값을 유지합니다. 이미 공개한 고정 게시본은 바꾸지 않습니다.",
-    "반환된 문서·버전을 저장 상태로 교체하세요. 409이면 최신 GET 결과에 사용자 변경을 합쳐 다시 저장합니다. 저장 후 검토 및 새 게시본 생성·공개는 별도로 수행합니다.", ref("StudioDocumentResult"), {"document": {**ex.DOCUMENT, "saveRevision": 1}, "project": {**ex.DRAFT_PROJECT, "document": {**ex.DRAFT_PROJECT["document"], "saveRevision": 1}}}, errors="not_found version_conflict invalid_project " + DOCUMENT_ERRORS, body=ex.DOCUMENT)
+    "반환된 문서·버전을 저장 상태로 교체하세요. 409이면 최신 GET 결과에 사용자 변경을 합쳐 다시 저장합니다. 저장 후 검토 및 새 게시본 생성·공개는 별도로 수행합니다.", ref("StudioDocumentResult"), {"document": {**ex.DOCUMENT, "saveRevision": 1}, "project": {**ex.DRAFT_PROJECT, "document": {**ex.DRAFT_PROJECT["document"], "saveRevision": 1}}}, errors="not_found version_conflict invalid_project character_locked " + DOCUMENT_ERRORS, body=ex.DOCUMENT)
 
 ASSIST_EFFECT = "OpenAI를 호출해 제안만 반환합니다. 문서·카드·문장·용어 목록을 자동으로 저장하거나 검토 완료로 표시하지 않습니다. 데모에서는 ai_not_configured 오류입니다."
 describe("simplify", "문장 쉽게 바꾸기 — 의미를 보존한 후보 제안",
@@ -265,9 +274,9 @@ describe("explain", "용어 설명 제안 — 사건 문맥에 맞춘 쉬운 풀
 describe("image_candidates", "그림 후보 생성·조회 — OpenAI 장면 설명과 Comfy 그림",
     "편집기의 카드 → 그림 넣기/바꾸기 → 그림 후보 보기에서 호출합니다.", "JSON {cardId}를 보냅니다. 카드 문장·원문 근거·당사자 표시 이름은 저장된 문서에서 읽으므로 자동 저장 완료 후 요청하세요. 프롬프트·워크플로·jobId는 FE에서 보내지 않습니다.",
     "{candidates:[{src,alt,meaning}]}를 반환합니다. 실제 AI 모드에서는 해당 카드의 Comfy 결과 1장이 먼저, 업로드 자산이 이어집니다. 생성 결과 src는 서버가 보관한 PNG의 주소(/api/studio/assets/{id})입니다. 예시의 작은 PNG는 형식 설명용이며 실제 생성 품질 예시가 아닙니다.",
-    "먼저 등장인물(role=person, partyId 지정) 카드에서 그림을 생성·선택하고 PUT document로 저장하세요. 결론·주장·판단·배경 그림을 요청하면 서버가 document.images와 인물 카드의 imageId를 연결해 저장된 기준 그림을 찾습니다. 후보만 생성하고 적용하지 않은 그림은 기준으로 쓰지 않습니다.\n\nOpenAI에는 대상 문장·원문 근거와 등장인물의 이름·역할·저장된 설명, 기준 그림 번호를 함께 전달합니다. 누가 누구에게 무엇을 해야 하는지와 주장·판단·결정을 구분해 장면을 설계합니다. 기준 그림은 OpenAI 이미지 입력으로 읽어 얼굴·머리·수염 유무·상의·하의·신발을 고정 외형으로 저장합니다. 같은 소유자·프로젝트·자산의 동일 픽셀은 분석 결과를 재사용합니다. 생성 결과를 외형 검사로 차단하거나 자동 보정하지 않고 후보로 반환합니다. 이전 외형 검사에서 제외된 작업도 같은 요청으로 기존 결과를 다시 조회합니다. 한 사람을 특정할 수 없는 기준 그림은 422 character_reference_unclear입니다. 외형 유지 지시가 완벽한 일치를 보장하지 않으므로 후보를 직접 확인합니다. 카드의 partyId와 문장·원문 근거의 이름·역할 언급으로 관련 인물 참조를 선택하고 그림 번호를 다시 매깁니다. 인물을 특정할 수 없으면 모든 참조를 유지합니다. 실제 PNG·JPEG·WebP 픽셀을 Comfy에 업로드하여 Qwen-Image-Edit-2511의 TextEncodeQwenImageEditPlus에 시각 입력과 VAE 참조로 전달합니다. 장면당 최대 3개이며 초과 시 422 character_reference_limit로 유료 장면 설계·생성 전에 중단합니다. 프로젝트 전체 기준 그림 제한은 6개입니다. 새 인물을 그리지 않고 참조의 외형·옷·색을 유지한 채 자세·장면만 편집하도록 지시합니다. 출력은 첫 참조 비율을 약 1MP로 정규화하며 정사각형이면 1024×1024입니다. Lightning LoRA 없이 20 steps, CFG 4로 한 장을 생성합니다. 인물 카드 자체를 생성할 때는 기존 FLUX Schnell (768×768, 4 steps)을 유지합니다. 일반 장면에 저장된 기준 그림이 없으면 FLUX.2 Dev의 텍스트 기반 생성을 사용합니다. 기존 4-step 모델보다 생성 시간과 GPU 사용량이 증가할 수 있습니다. 실행 전 모델·노드 가용성을 검사하고, 이전 버전에 접수한 작업은 저장된 워크플로우로 재생성 없이 이어서 조회합니다. 외형 일치나 관계의 정확성을 자동 보증하지는 않습니다.\n\n같은 카드와 등장인물 기준은 저장/진행 작업을 재사용합니다. 인물 설명·역할·기준 그림을 바꾸면 다음 요청은 새 생성이 될 수 있고, 이전 결론 그림을 자동 교체하지 않습니다. 데모는 업로드 후보만 반환합니다. 후보는 프로젝트 자산으로 보관하지만 문서에 자동 연결하지 않습니다.\n\nComfy 완료 대기 90초 후 image_in_progress이면 같은 요청으로 이어서 확인합니다. 접수 불확실·실행 실패·만료는 새 유료 작업을 자동 제출하지 않습니다. 생성 중 카드나 등장인물 기준이 바뀌면 image_card_changed로 오래된 후보 적용을 막습니다. 브라우저 요청 취소가 제공자 작업 취소를 뜻하지는 않습니다.",
+    "편집 진입 시 prepare-images가 등장인물(role=person, partyId 지정)을 먼저 자동 생성·저장하고 고정합니다. 이후 장면 그림을 변경할 때 이 API를 사용합니다. 결론·주장·판단·배경 그림을 요청하면 서버가 document.images와 인물 카드의 imageId를 연결해 저장된 기준 그림을 찾습니다. 후보만 생성하고 적용하지 않은 그림은 기준으로 쓰지 않습니다.\n\nOpenAI에는 대상 문장·원문 근거와 등장인물의 이름·역할·저장된 설명, 기준 그림 번호를 함께 전달합니다. 누가 누구에게 무엇을 해야 하는지와 주장·판단·결정을 구분해 장면을 설계합니다. 기준 그림은 OpenAI 이미지 입력으로 읽어 얼굴·머리·수염 유무·상의·하의·신발을 고정 외형으로 저장합니다. 같은 소유자·프로젝트·자산의 동일 픽셀은 분석 결과를 재사용합니다. 생성 결과를 외형 검사로 차단하거나 자동 보정하지 않고 후보로 반환합니다. 이전 외형 검사에서 제외된 작업도 같은 요청으로 기존 결과를 다시 조회합니다. 한 사람을 특정할 수 없는 기준 그림은 422 character_reference_unclear입니다. 외형 유지 지시가 완벽한 일치를 보장하지 않으므로 후보를 직접 확인합니다. 카드의 partyId와 문장·원문 근거의 이름·역할 언급으로 관련 인물 참조를 선택하고 그림 번호를 다시 매깁니다. 인물을 특정할 수 없으면 모든 참조를 유지합니다. 실제 PNG·JPEG·WebP 픽셀을 Comfy에 업로드하여 Qwen-Image-Edit-2511의 TextEncodeQwenImageEditPlus에 시각 입력과 VAE 참조로 전달합니다. 장면당 최대 3개이며 초과 시 422 character_reference_limit로 유료 장면 설계·생성 전에 중단합니다. 프로젝트 전체 기준 그림 제한은 6개입니다. 새 인물을 그리지 않고 참조의 외형·옷·색을 유지한 채 자세·장면만 편집하도록 지시합니다. 출력은 첫 참조 비율을 약 1MP로 정규화하며 정사각형이면 1024×1024입니다. Lightning LoRA 없이 20 steps, CFG 4로 한 장을 생성합니다. 인물 카드 자체를 생성할 때는 기존 FLUX Schnell (768×768, 4 steps)을 유지합니다. 일반 장면에 저장된 기준 그림이 없으면 FLUX.2 Dev의 텍스트 기반 생성을 사용합니다. 기존 4-step 모델보다 생성 시간과 GPU 사용량이 증가할 수 있습니다. 실행 전 모델·노드 가용성을 검사하고, 이전 버전에 접수한 작업은 저장된 워크플로우로 재생성 없이 이어서 조회합니다. 외형 일치나 관계의 정확성을 자동 보증하지는 않습니다.\n\n같은 카드와 등장인물 기준은 저장/진행 작업을 재사용합니다. 인물 설명·역할·기준 그림을 바꾸면 다음 요청은 새 생성이 될 수 있고, 이전 결론 그림을 자동 교체하지 않습니다. 데모는 업로드 후보만 반환합니다. 후보는 프로젝트 자산으로 보관하지만 문서에 자동 연결하지 않습니다.\n\nComfy 완료 대기 90초 후 image_in_progress이면 같은 요청으로 이어서 확인합니다. 접수 불확실·실행 실패·만료는 새 유료 작업을 자동 제출하지 않습니다. 생성 중 카드나 등장인물 기준이 바뀌면 image_card_changed로 오래된 후보 적용을 막습니다. 브라우저 요청 취소가 제공자 작업 취소를 뜻하지는 않습니다.",
     "사용자가 고른 후보에 FE 그림 ID와 source=library를 부여하고 document.images에 넣습니다. 대상 card.imageId를 연결한 뒤 PUT document로 저장하세요. alt와 meaning은 실제 그림과 대조합니다. 편집 중 FE가 이전 후보를 캐시했다면 최신 내용 저장 후 새 요청이 실제 전송되도록 새로고침합니다.", ref("StudioImageCandidates"), ex.IMAGE_CANDIDATES,
-    errors="not_found image_limit image_too_large invalid_image unsupported_image image_card_changed character_reference_invalid character_reference_ambiguous character_reference_limit character_reference_unclear comfy_not_configured comfy_auth_error comfy_insufficient_credits comfy_rate_limited comfy_workflow_unavailable image_in_progress image_submission_unknown comfy_connection_or_response_error comfy_invalid_response comfy_asset_host_not_allowed comfy_download_failed image_missing_output image_generation_failed " + AI_ERRORS,
+    errors="not_found character_locked image_limit image_too_large invalid_image unsupported_image image_card_changed character_reference_invalid character_reference_ambiguous character_reference_limit character_reference_unclear comfy_not_configured comfy_auth_error comfy_insufficient_credits comfy_rate_limited comfy_workflow_unavailable image_in_progress image_submission_unknown comfy_connection_or_response_error comfy_invalid_response comfy_asset_host_not_allowed comfy_download_failed image_missing_output image_generation_failed " + AI_ERRORS,
     body={"cardId": "card-1"}, alternatives={"demo_empty": ("데모 모드이며 업로드한 그림이 없음", {"candidates": []})})
 describe("upload_image", "내 그림 업로드 — 안전한 이미지 보관 후 문서 연결",
     "카드의 내 그림 올리기 도구에서 파일과 설명을 입력할 때 호출합니다.", "multipart/form-data로 file 바이너리와 alt·meaning 텍스트를 전달합니다. file은 필수, alt·meaning은 생략 시 빈 문자열이며 각각 최대 10,000자입니다. 업로드 파일 2MiB 제한, PNG/JPEG/WebP 및 제한된 SVG를 지원합니다.",
