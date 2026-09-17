@@ -1,4 +1,4 @@
-"""Bundled fictional characters: face display and separate full-pose references."""
+"""Bundled fictional characters: face display and separate neutral-pose references."""
 import hashlib
 import io
 import json

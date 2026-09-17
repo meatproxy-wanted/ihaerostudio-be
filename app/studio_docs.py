@@ -38,7 +38,7 @@ API_DESCRIPTION = """
 `AUTH_MODE=keys`로 바꾸면 `API_KEYS`에 등록한 토큰만 통과하며, 등록한 토큰은 두 모드 모두에서 그 제작자로 인식됩니다.
 **OpenAI 키나 Comfy 키를 Authorize에 넣지 마세요.** 별도 회원가입·로그인·토큰 발급 API는 없고, AI 제공자 키는 서버 환경변수로만 관리합니다.
 
-공개 독자 API를 제외한 모든 업무 API는 인증이 필요합니다. 다른 제작자의 자료, 삭제한 자료,
+공개 독자·그림 파일 API를 제외한 모든 업무 API는 인증이 필요합니다. 다른 제작자의 자료, 삭제한 자료,
 없는 자료는 제작자 조회에서 동일하게 `404 not_found`가 됩니다. 목록은 현재 토큰의 자료만 반환합니다.
 
 각 API를 펼치면 **호출 시점, 요청 방법, 응답 해석, 저장 영향, 다음 호출, 오류별 대응**이 나옵니다.
@@ -64,7 +64,7 @@ API_DESCRIPTION = """
 | --- | --- |
 | `AI_PROVIDER=demo` | 입력 원문의 명시된 표제를 단순 분류하고 초안에는 원문을 복사합니다. 실제 쉬운 글 생성이 아닙니다. |
 | `AI_PROVIDER=openai` + OpenAI 키·모델 | 자료 분석, 쉬운 글 초안, 문장·용어 보조에서 실제 OpenAI를 호출합니다. |
-| 실제 AI 모드 + 그림 요청 | 기본 library 모드에서 GPT가 고정 캐릭터 10종 중 선택하고 얼굴 크롭을 저장합니다. 장면은 Comfy 키가 필요하며 선택한 기본 포즈 원본을 Qwen-Image-Edit-2511 (FP8, 40 steps, CFG 4)에 전달합니다. 정사각형 출력은 768×768입니다. generate 호환 모드에서는 기존 Qwen 초상 생성이 유지됩니다. |
+| 실제 AI 모드 + 그림 요청 | 기본 library 모드의 인물은 GPT가 10종 중 선택한 얼굴 크롭입니다(Comfy 호출 없음). 장면은 Comfy 키가 필요하며 인물 원본 레퍼런스 또는 별도 분위기 샘플을 Qwen-Image-Edit-2511 (FP8, 40 steps, CFG 4)에 전달합니다. stock 참조에는 별도 샘플을 섞지 않습니다. 기본 정사각형은 768×768입니다. |
 | 데모의 그림 후보 보기 | 이 자료에 업로드한 그림만 반환합니다. 없으면 candidates는 빈 배열입니다. |
 
 텍스트 생성은 동기 응답입니다. `200/201` 성공 응답은 생성·검증·저장이 필요한 작업을 마친 결과이며
@@ -76,9 +76,10 @@ API_DESCRIPTION = """
 Comfy 완료를 90초간 기다려도 끝나지 않으면 `503 image_in_progress`를 반환하며 같은 요청으로 이어서 확인합니다.
 이 90초는 OpenAI 장면 설명 생성·사전 점검·파일 다운로드 시간을 포함한 전체 HTTP 제한 시간이 아닙니다.
 Comfy 접수 결과가 불확실하거나 작업이 실패·만료되면 자동으로 새 유료 작업을 제출하지 않습니다.
-그림 파일은 서버가 PNG로 보관하고 `/api/studio/assets/{id}` 주소로 내주므로 제공자의 임시 URL 만료에 영향을 받지 않습니다.
+생성 그림 파일은 서버가 PNG로 보관하고 `/api/studio/assets/{id}` 주소로 내주므로 제공자의 임시 URL 만료에 영향을 받지 않습니다.
 
-실제 AI를 호출하면 해당 원문·사건 구조·편집 텍스트가 OpenAI로 전달되고, 그림 생성 시 장면 설명이 Comfy로 전달됩니다.
+실제 AI를 호출하면 관련 원문·사건 구조·편집 텍스트와 레퍼런스 픽셀이 OpenAI로 전달됩니다. 장면 생성 시 설명과 레퍼런스 이미지가 Comfy로 전달됩니다.
+그림 파일 URL은 인증 없이 조회됩니다. 미공개 문서의 접근 통제와 다르며 공개 해제가 그림 URL 회수는 아닙니다.
 그림과 대체텍스트는 생성 초안이며 제작자의 의미 대조가 필요합니다. 검토 API는 의미를 판정하는 AI가 아니라 규칙 점검입니다.
 
 ## 오류·제한·기타 경로
@@ -124,7 +125,7 @@ ERRORS = {
     "encrypted_pdf": (422, "암호화된 PDF는 해제 후 올려주세요.", "원본 PDF의 암호를 해제한 뒤 업로드합니다."),
     "ocr_required": (422, "읽을 수 있는 텍스트가 없습니다.", "별도 OCR을 적용하거나 판결문 텍스트를 붙여넣습니다."),
     "image_too_large": (413, "그림의 용량 또는 해상도 제한을 넘었어요.", "업로드는 2MiB, 생성 파일은 5MiB, 래스터 해상도는 1,600만 화소 이하로 준비합니다."),
-    "image_limit": (413, "자료의 그림 개수 또는 용량 한도를 넘었어요.", "자료당 보관 그림 100개·src 합계 12MiB 제한입니다. 문서에서 그림 연결만 빼도 보관 자산은 삭제되지 않습니다."),
+    "image_limit": (413, "자료의 그림 개수 또는 용량 한도를 넘었어요.", "자료당 보관 그림 100개·보관 그림 바이너리 합계 12MiB 제한입니다. 문서에서 그림 연결만 빼도 보관 자산은 삭제되지 않습니다."),
     "image_too_complex": (413, "SVG가 너무 복잡해요.", "SVG 노드 10,000개·중첩 64단계 이하로 줄이거나 PNG/JPEG를 사용합니다."),
     "unsafe_svg": (422, "외부 참조·스타일·스크립트가 없는 SVG를 사용해 주세요.", "스크립트·외부 참조·HTML 등이 없는 SVG 또는 PNG/JPEG를 올립니다."),
     "unsupported_image": (422, "PNG, JPEG, WebP만 지원합니다.", "래스터 이미지를 지원 형식으로 변환합니다. SVG 업로드는 별도 안전성 검사를 적용합니다."),
@@ -238,14 +239,14 @@ describe("generate", "쉬운 글 초안 생성 — 완료된 문서와 프로젝
     "200과 {document, project}를 반환합니다. document에는 네 구획, 카드별 문장, 근거, 당사자 이름, 용어 풀이 등이 들어갑니다. 작업 ID가 아니라 완료된 문서입니다. 첫 초안의 images는 빈 배열이고 imageId는 null입니다. 재생성 시 고정된 인물 그림은 유지합니다.",
     "OpenAI 모드는 실제 생성, demo는 원문 복사입니다. 서버는 모든 새 문장에 origin=ai-draft·verified=false를 강제합니다. 처음 버전은 0이고 재생성은 기존 편집 문서를 교체하며 saveRevision/contentRevision을 각각 증가시키고 검토를 해제합니다. 실패하면 기존 문서를 보존합니다.",
     "반환한 document를 편집기에, project를 진행 상태에 반영하세요. 편집 진입 시 document/prepare-images를 완료까지 이어 호출하면 인물과 장면 그림을 자동 생성·적용합니다. 이후 장면 변경만 assist/images와 PUT document로 처리합니다. 재호출은 새 생성이므로 중복 클릭을 막으세요.", ref("StudioDocumentResult"), {"document": ex.DOCUMENT, "project": ex.DRAFT_PROJECT}, errors="not_found version_conflict character_locked " + DOCUMENT_ERRORS + " " + AI_ERRORS)
-describe("prepare_images", "편집 진입 그림 일괄 생성 — 인물 먼저 생성·고정 후 장면 자동 적용",
-    "편집 진입 직후 호출합니다. 카드별 생성·선택 절차 없이 인물과 장면 그림을 자동 적용합니다.",
+describe("prepare_images", "편집 진입 그림 자동 준비 — 캐릭터 선택·얼굴 적용 후 장면 생성",
+    "편집 진입 직후 자동으로 호출합니다. 글은 먼저 document/generate로 만듭니다. 전체 컷을 한 요청이나 한 통이미지로 만드는 방식이 아니며 요청당 최대 카드 하나를 처리합니다.",
     "project_id만 지정하고 본문은 없습니다. document/generate로 글을 먼저 만듭니다.",
     "{document,project,generation:{status,phase,completed,total,currentCardId}}를 반환합니다. running이면 같은 POST를 이어 호출합니다. ready는 전체 적용 완료, skipped는 그림 없음 설정 또는 demo 모드입니다.",
-    "기본 `STUDIO_CHARACTER_MODE=library`에서는 GPT가 번들 캐릭터 10종 중 서로 다른 캐릭터를 선택하고 partyId별 배정을 저장합니다. 실제 당사자의 외모를 재현하지 않는 가상 인물입니다. 등장인물 카드에는 선택한 기본 포즈의 얼굴 크롭(768×768)을 표시하고, 장면의 OpenAI 외형 분석 및 Comfy Qwen 입력에는 같은 캐릭터의 한 명짜리 기본 포즈 원본을 전달합니다. 4포즈 시트 전체나 얼굴 크롭을 장면 레퍼런스로 보내지 않습니다. 이 경로는 별도 화풍 샘플을 섞지 않으며 Qwen 참조 장면은 40 steps, CFG 4, 정사각형 768×768입니다. 기존 적용·고정 인물과 진행 중 유료 작업은 변경하지 않습니다. 선택한 인물은 새로고침·추가 컷·초안 재생성에도 유지합니다. 프로젝트 기준 그림 6개, 장면 참조 3개 제한은 그대로입니다. API 계약과 FE 코드는 바꿀 필요가 없습니다. 인물 얼굴 자산 생성에는 Comfy 호출이 없고 최초 GPT 선택만 필요합니다. 장면 외형 일치는 제작자가 결과를 확인해야 합니다. 요청당 최대 카드 한 개를 처리합니다. 완료 그림은 건너뛰고 진행 중 Comfy 작업은 재조회합니다. 접수 불확실·실패 작업을 자동 유료 재제출하지 않습니다. 인물 교체·삭제는 서버에서 차단하며 글·장면·대체텍스트 편집은 유지합니다. generate 호환 모드에서는 기존 화풍 샘플 기반 초상 생성과 저장 전 한 명·흰 배경 AI 검사를 사용합니다.",
+    "기본 STUDIO_CHARACTER_MODE=library에서는 GPT가 고정 캐릭터 10종에서 선택하고 partyId 배정을 저장합니다. 실제 당사자의 외모 재현이 아닙니다. 얼굴 크롭(768×768)을 카드에 자동 적용·고정하며 얼굴을 Comfy로 새로 그리지 않습니다. 장면의 OpenAI 외형 분석과 Comfy Qwen 입력에는 같은 캐릭터의 한 명짜리 기본 포즈 원본을 전달합니다. 4포즈 시트나 얼굴 크롭은 장면 입력으로 보내지 않고 stock 참조에 별도 화풍 샘플을 섞지 않습니다. 10종 후보와 자동 준비 인물 상한 6명·장면 참조 상한 3명은 별개입니다. Qwen Edit 장면은 40 steps·CFG 4, 정사각형 기준 768×768입니다. stock 참조 없는 새 장면은 분위기 샘플 경로입니다.\n\n완료 그림과 기존 적용·고정 인물은 유지합니다. 페이지를 닫으면 추가 카드 요청은 멈추고 재진입 시 진행 중 원격 작업을 조회합니다. 완료 일괄 준비는 장면 삭제·카드 추가만으로 다시 실행되지 않습니다. 새 장면은 assist/images로 만들고 초안 재생성은 고정 인물을 보존한 뒤 새 장면의 일괄 준비를 초기화합니다. 글·장면·대체텍스트는 편집 가능하며 인물 교체·삭제는 서버에서 차단합니다. 앞서 적용된 카드 결과는 이후 오류에도 남습니다. 접수 불확실·실행 실패·만료 작업을 자동 새 유료 작업으로 대체하지 않습니다.\n\ngenerate 호환 모드는 기존 Qwen 초상 생성과 한 명·흰 배경 GPT 검사를 사용합니다. 접수·접수 불확실 구형 작업은 원래 워크플로우로 조회하므로 steps·해상도가 다를 수 있습니다. 외형·상황 일치는 제작자가 직접 확인합니다.",
     "ready/skipped 뒤 최신 document와 project를 캐시에 넣고 편집기를 엽니다. 진행 중에는 phase와 completed/total을 표시하고 편집·자동 저장을 시작하지 않습니다. 오류 시 중단하고 사용자에게 표시합니다. 프론트 취소는 원격 유료 작업 취소가 아니며 다음 진입에 이어받습니다.",
     ref("StudioImagePreparation"), {"document": ex.DOCUMENT, "project": ex.DRAFT_PROJECT, "generation": {"status": "running", "phase": "scenes", "completed": 0, "total": 4, "currentCardId": "card-1"}},
-    errors="not_found character_library_unavailable character_library_changed character_selection_invalid version_conflict portrait_composition_invalid character_locked character_reference_limit image_card_changed invalid_party image_limit image_missing_output character_reference_invalid character_reference_ambiguous character_reference_unclear comfy_not_configured comfy_auth_error comfy_insufficient_credits comfy_rate_limited comfy_workflow_unavailable image_submission_unknown comfy_connection_or_response_error comfy_invalid_response comfy_asset_host_not_allowed comfy_download_failed image_generation_failed " + AI_ERRORS)
+    errors="not_found character_library_unavailable character_library_changed character_selection_invalid version_conflict image_in_progress portrait_composition_invalid character_locked character_reference_limit image_card_changed invalid_party image_limit image_missing_output character_reference_invalid character_reference_ambiguous character_reference_unclear comfy_not_configured comfy_auth_error comfy_insufficient_credits comfy_rate_limited comfy_workflow_unavailable image_submission_unknown comfy_connection_or_response_error comfy_invalid_response comfy_asset_host_not_allowed comfy_download_failed image_generation_failed " + AI_ERRORS)
 describe("document", "편집 문서 조회 — 최신 본문과 저장 버전",
     "편집 화면을 열거나 새로고침·저장 충돌 후 최신 문서를 읽을 때 호출합니다.", "project_id를 지정하며 요청 본문은 없습니다. 자료를 만들기만 하고 초안을 생성하지 않았다면 404입니다.",
     "EasyDocument 객체 자체를 반환합니다. project 요약 래퍼는 없습니다. sections는 people→decision→reasons→glossary 순서이며 문장마다 근거·origin·verified가 있습니다.",
@@ -276,16 +277,16 @@ describe("explain", "용어 설명 제안 — 사건 문맥에 맞춘 쉬운 풀
     "{explanation: 문자열}을 반환합니다. 현재 사건 문맥에 맞는 쉬운 설명을 요청하며 새 법적 조언을 추가하지 않도록 합니다.", ASSIST_EFFECT,
     "풀이를 대조한 뒤 FE에서 glossary 항목의 id·term·explanation을 구성하고 문서 전체를 저장합니다.", ref("Explanation"), {"explanation": "집을 빌릴 때 맡겨 두는 돈이에요. 이 사건에서는 계약이 끝난 뒤 돌려받을 돈을 말해요."}, errors="not_found ai_not_configured " + AI_ERRORS, body={"term": "임대차보증금", "context": "계약이 끝난 뒤 보증금을 돌려달라고 했습니다."})
 describe("image_candidates", "그림 후보 생성·조회 — OpenAI 장면 설명과 Comfy 그림",
-    "카드의 그림 후보를 요청합니다. 이후 장면 수정에 사용하며 저장된 카드와 원문 근거를 바탕으로 장면을 설계합니다.", "JSON {cardId}를 보냅니다. 카드 문장·원문 근거·당사자 표시 이름은 저장된 문서에서 읽으므로 자동 저장 완료 후 요청하세요. 프롬프트·워크플로·jobId는 FE에서 보내지 않습니다.",
-    "{candidates:[{src,alt,meaning}]}를 반환합니다. 실제 AI 모드에서는 해당 카드의 Comfy 결과 1장이 먼저, 업로드 자산이 이어집니다. 생성 결과 src는 서버가 보관한 PNG의 주소(/api/studio/assets/{id})입니다. 예시의 작은 PNG는 형식 설명용이며 실제 생성 품질 예시가 아닙니다.",
-    "기본 `STUDIO_CHARACTER_MODE=library`에서는 GPT가 번들 캐릭터 10종 중 서로 다른 캐릭터를 선택하고 partyId별 배정을 저장합니다. 실제 당사자의 외모를 재현하지 않는 가상 인물입니다. 등장인물 카드에는 선택한 기본 포즈의 얼굴 크롭(768×768)을 표시하고, 장면의 OpenAI 외형 분석 및 Comfy Qwen 입력에는 같은 캐릭터의 한 명짜리 기본 포즈 원본을 전달합니다. 4포즈 시트 전체나 얼굴 크롭을 장면 레퍼런스로 보내지 않습니다. 이 경로는 별도 화풍 샘플을 섞지 않으며 Qwen 참조 장면은 40 steps, CFG 4, 정사각형 768×768입니다. 기존 적용·고정 인물과 진행 중 유료 작업은 변경하지 않습니다. 선택한 인물은 새로고침·추가 컷·초안 재생성에도 유지합니다. 프로젝트 기준 그림 6개, 장면 참조 3개 제한은 그대로입니다. API 계약과 FE 코드는 바꿀 필요가 없습니다. 인물 얼굴 자산 생성에는 Comfy 호출이 없고 최초 GPT 선택만 필요합니다. 장면 외형 일치는 제작자가 결과를 확인해야 합니다.\n\n아래 화풍 샘플·초상 생성 설명은 generate 및 기존 자료 호환 경로입니다.\n\nOpenAI에는 대상 문장·원문 근거와 등장인물의 이름·역할·저장된 설명, 기준 그림 번호를 함께 전달합니다. 누가 누구에게 무엇을 해야 하는지와 주장·판단·결정을 구분해 장면을 설계합니다. 기준 그림은 OpenAI 이미지 입력으로 읽어 얼굴·머리·수염 유무·상의·하의·신발을 고정 외형으로 저장합니다. 같은 소유자·프로젝트·자산의 동일 픽셀은 분석 결과를 재사용합니다. 장면 생성 결과를 외형 검사로 차단하거나 자동 보정하지 않고 후보로 반환합니다. 이전 외형 검사에서 제외된 작업도 같은 요청으로 기존 결과를 다시 조회합니다. 한 사람을 특정할 수 없는 기준 그림은 422 character_reference_unclear입니다. 외형 유지 지시가 완벽한 일치를 보장하지 않으므로 후보를 직접 확인합니다. 카드의 partyId와 문장·원문 근거의 이름·역할 언급으로 관련 인물 참조를 선택하고 그림 번호를 다시 매깁니다. 인물을 특정할 수 없으면 모든 참조를 유지합니다. 실제 PNG·JPEG·WebP 픽셀을 Comfy에 업로드하여 Qwen-Image-Edit-2511의 TextEncodeQwenImageEditPlus에 시각 입력과 VAE 참조로 전달합니다. 장면당 최대 3개이며 초과 시 422 character_reference_limit로 유료 장면 설계·생성 전에 중단합니다. 프로젝트 전체 기준 그림 제한은 6개입니다. 새 인물을 그리지 않고 참조의 외형·옷·색을 유지한 채 자세·장면만 편집하도록 지시합니다. 출력은 첫 참조 비율을 약 1MP로 정규화한 뒤 가로·세로를 75%로 축소하며 정사각형이면 768×768입니다. Lightning LoRA 없이 40 steps, CFG 4로 한 장을 생성합니다. 새 초상과 장면에는 번들 화풍 샘플을 마지막 이미지 슬롯에 넣어 화면 분위기만 가볍게 참고하도록 지시합니다. 샘플의 인물·옷·자세·배경·구도는 복사하지 않으며 인물 외형과 상황이 우선입니다. 수치형 스타일 강도는 없습니다. 인물 참조가 3개이면 인물 슬롯을 우선하여 별도 샘플은 생략합니다. 새 초상은 Qwen Edit 40 steps, CFG 4 및 768×768 빈 latent로 생성하고 한 명·빈 흰 배경 여부를 저장 전에 GPT 이미지 분석으로 검사합니다. 불통과 시 portrait_composition_invalid로 적용하지 않으며 자동 유료 재생성을 하지 않습니다. 샘플이 없는 구형 호환 경로는 초상 Qwen-Image-2512 20 steps, 인물 참조 없는 장면 FLUX.2 Dev 20 steps이며, 기존 적용 그림·고정 인물·완료된 일괄 작업은 교체하지 않습니다. 기존 4-step 모델보다 생성 시간과 GPU 사용량이 증가할 수 있습니다. 실행 전 모델·노드 가용성을 검사하고, 이전 버전에 접수한 작업은 저장된 워크플로우로 재생성 없이 이어서 조회합니다. 외형 일치나 관계의 정확성을 자동 보증하지는 않습니다.\n\n같은 카드와 등장인물 기준은 저장/진행 작업을 재사용합니다. 인물 설명·역할·기준 그림을 바꾸면 다음 요청은 새 생성이 될 수 있고, 이전 결론 그림을 자동 교체하지 않습니다. 데모는 업로드 후보만 반환합니다. 후보는 프로젝트 자산으로 보관하지만 문서에 자동 연결하지 않습니다.\n\nComfy 완료 대기 90초 후 image_in_progress이면 같은 요청으로 이어서 확인합니다. 접수 불확실·실행 실패·만료는 새 유료 작업을 자동 제출하지 않습니다. 생성 중 카드나 등장인물 기준이 바뀌면 image_card_changed로 오래된 후보 적용을 막습니다. 브라우저 요청 취소가 제공자 작업 취소를 뜻하지는 않습니다.",
+    "저장된 장면 카드의 그림 후보를 요청할 때 호출합니다. 인물 얼굴은 prepare-images에서 먼저 자동 적용하며 고정 인물 변경은 불가합니다.", "JSON {cardId}를 보냅니다. 카드 문장·원문 근거·당사자 표시 이름은 저장된 문서에서 읽으므로 자동 저장 완료 후 요청하세요. 프롬프트·워크플로·jobId는 FE에서 보내지 않습니다.",
+    "{candidates:[{src,alt,meaning}]}를 반환합니다. 실제 AI의 인물 후보는 기본 모드에서 고정 캐릭터 얼굴이며 장면은 Comfy 결과 한 장입니다. 업로드 자산이 이어집니다. src는 서버에 보관한 /api/studio/assets/{id} 주소입니다. 예제 PNG는 형식 설명용이며 실제 품질 예시가 아닙니다.",
+    "기본 library 모드의 인물 후보는 저장한 캐릭터 배정의 얼굴 크롭입니다. 장면은 저장된 문장·원문 근거와 적용된 인물 레퍼런스를 사용합니다. 고정 캐릭터의 경우 같은 캐릭터의 한 명짜리 기본 포즈 원본을 OpenAI 외형 분석과 Qwen 입력에 전달하며 시트 전체나 얼굴 크롭은 보내지 않습니다. 분위기 샘플은 stock 참조 없는 경로에서만 가볍게 참고하고 인물 참조가 3개면 별도 샘플은 없습니다.\n\nOpenAI는 외형을 분석·캐시하고 행동·관계·사물 상태·주장/사실/명령/완료를 구분해 장면을 설계합니다. Qwen-Image-Edit-2511 FP8, 40 steps·CFG 4, 정사각형 기준 768×768로 한 장을 생성합니다. 장면 참조는 최대 3명, 프로젝트 기준 그림은 최대 6명입니다. 결과 외형·상황·의미를 자동 보증하거나 불일치 그림을 자동 유료 보정하지 않습니다.\n\ngenerate 호환 모드의 새 초상은 분위기 샘플을 사용하는 Qwen Edit 생성과 한 명·흰 배경 검사를 거칩니다. 기존 적용 인물 및 접수·접수 불확실 구형 작업은 유지합니다. 그 작업은 원래 steps·해상도로 끝날 수 있습니다.\n\n후보는 자산으로 보관하지만 문서에 자동 적용하지 않습니다(자동 적용은 prepare-images). source=library는 생성 장면에도 쓰는 분류값이며 고정 10종만 뜻하지 않습니다. 동일 문맥 결과·진행 작업을 재사용하고 바뀐 문맥은 새 작업일 수 있습니다. demo는 업로드 후보만 반환합니다. 진행 중은 503 image_in_progress로 같은 요청을 이어 조회합니다. 접수 불확실·실행 실패·만료 작업을 새 유료 작업으로 자동 대체하지 않습니다. 생성 중 문맥 변경은 image_card_changed로 오래된 결과 저장을 막습니다. 브라우저 취소는 Comfy 작업 취소가 아닙니다.",
     "사용자가 고른 후보에 FE 그림 ID와 source=library를 부여하고 document.images에 넣습니다. 대상 card.imageId를 연결한 뒤 PUT document로 저장하세요. alt와 meaning은 실제 그림과 대조합니다. 편집 중 FE가 이전 후보를 캐시했다면 최신 내용 저장 후 새 요청이 실제 전송되도록 새로고침합니다.", ref("StudioImageCandidates"), ex.IMAGE_CANDIDATES,
     errors="not_found character_library_unavailable character_library_changed character_selection_invalid portrait_composition_invalid character_locked image_limit image_too_large invalid_image unsupported_image image_card_changed character_reference_invalid character_reference_ambiguous character_reference_limit character_reference_unclear comfy_not_configured comfy_auth_error comfy_insufficient_credits comfy_rate_limited comfy_workflow_unavailable image_in_progress image_submission_unknown comfy_connection_or_response_error comfy_invalid_response comfy_asset_host_not_allowed comfy_download_failed image_missing_output image_generation_failed " + AI_ERRORS,
     body={"cardId": "card-1"}, alternatives={"demo_empty": ("데모 모드이며 업로드한 그림이 없음", {"candidates": []})})
 describe("upload_image", "내 그림 업로드 — 안전한 이미지 보관 후 문서 연결",
     "카드의 내 그림 올리기 도구에서 파일과 설명을 입력할 때 호출합니다.", "multipart/form-data로 file 바이너리와 alt·meaning 텍스트를 전달합니다. file은 필수, alt·meaning은 생략 시 빈 문자열이며 각각 최대 10,000자입니다. 업로드 파일 2MiB 제한, PNG/JPEG/WebP 및 제한된 SVG를 지원합니다.",
     "{image:{id,src,alt,meaning,source:'upload'}}를 반환합니다. 래스터는 PNG로 정제하고 긴 변을 최대 1,600픽셀로 줄입니다. SVG는 외부 참조·스크립트 등을 제한해 보관합니다.",
-    "프로젝트 자산과 updatedAt을 저장하지만 카드나 문서를 자동 수정하지 않습니다. AI 비용은 발생하지 않습니다. 자료당 자산 100개와 src 합계 12MiB 제한을 적용하며 문서에서 연결을 해제해도 보관 자산은 삭제하지 않습니다.",
+    "프로젝트 자산과 updatedAt을 저장하지만 카드나 문서를 자동 수정하지 않습니다. AI 비용은 발생하지 않습니다. 자료당 자산 100개와 보관 그림 바이너리 합계 12MiB 제한을 적용하며 문서에서 연결을 해제해도 보관 자산은 삭제하지 않습니다.",
     "반환한 image를 document.images에 추가하고 카드의 imageId를 연결해 PUT document로 저장합니다. 업로드 API는 설명 공란을 허용해도 실제 그림의 대체텍스트를 작성하세요.", ref("StudioImageUploadResult"), {"image": ex.IMAGE}, errors="not_found version_conflict image_limit image_too_large invalid_image unsupported_image unsafe_svg image_too_complex")
 
 describe("latest_review", "최근 점검 조회 — 저장된 검토 결과 또는 null",
@@ -399,7 +400,8 @@ def enrich_openapi(schema):
             note = FIELD_DESCRIPTIONS.get(name, {}).get(key, COMMON_FIELDS.get(key))
             if note and "description" not in prop:
                 prop["description"] = note
-    schema["tags"] = [{"name": "FE 연동", "description": "프론트가 실제 사용하는 32개 업무 동작입니다. 각 행의 한글 제목을 펼쳐 요청·응답·오류 예시와 다음 호출 순서를 확인하세요."}]
+    operation_count = sum(len(methods) for methods in schema["paths"].values())
+    schema["tags"] = [{"name": "FE 연동", "description": f"현재 제공하는 {operation_count}개 동작입니다. 각 행의 한글 제목을 펼쳐 요청·응답·오류 예시와 다음 호출 순서를 확인하세요."}]
     schema["components"]["securitySchemes"]["HTTPBearer"]["description"] = (
         "토큰 값만 입력합니다. Swagger가 Bearer 헤더를 붙입니다. "
         "익명 모드(기본)에서는 16자 이상의 아무 토큰이나 자기 작업함이 되고, AUTH_MODE=keys에서는 API_KEYS에 등록한 토큰만 통과합니다. "

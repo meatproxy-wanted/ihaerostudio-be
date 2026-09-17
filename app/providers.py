@@ -24,8 +24,8 @@ SYSTEM = """당신은 성인 독자를 존중하는 쉬운 판결 설명자료 �
 정확성을 보장하지 마세요. 출력은 요청한 JSON 스키마만 따르세요.
 """
 
-# The Easy-Read judgment guideline (summary of 사법정책연구원 2024) travels with every real AI
-# call as a constant system-prompt prefix, so provider-side prompt caching applies across tasks.
+# Text-only calls share the Easy-Read guideline prefix. Pixel inspections use
+# separate literal-observation instructions; provider caching is not guaranteed.
 GUIDELINES_PATH = Path(__file__).with_name("prompts") / "easy_read_guidelines.md"
 GUIDELINES = GUIDELINES_PATH.read_text(encoding="utf-8").strip()
 GUIDELINES_PREAMBLE = """아래 <작성 지침>은 사법정책연구원 『장애인 등을 위한 이해하기 쉬운(Easy-Read) 판결서 작성방안』(2024)의 요약입니다.

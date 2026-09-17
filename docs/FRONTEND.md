@@ -1,166 +1,162 @@
-# FE 연동 및 배포
+# FE 연동 및 서버 배포
 
-`ihaerostudio-fe/lib/api/types.ts`의 전체 `ApiClient`는 `/api/studio`를 사용합니다.
-서버는 현재 FE 계약만 제공합니다. 기존 `/api/v1`, 영상·그림 작업, `/share` 경로는 제거했습니다.
-`/health`는 배포 상태 확인용으로만 유지하며 Swagger 목록에서는 제외합니다.
-새 FE 자료는 SQLite의 `studio_projects` 테이블에 별도로 저장됩니다.
-기존 `/api/v1` 문서나 브라우저 IndexedDB 자료를 자동으로 옮기지 않습니다.
+현재 FE는 `lib/api/client.ts`의 HTTP 클라이언트로 BE를 호출하고 zod 스키마로 응답을 검증합니다.
+BE는 `/api/studio` API와 `/health`를 제공하며, `/api/v1`·영상 작업 API·`/share`는 등록하지 않습니다.
+구형 mock/IndexedDB 자료를 DB로 자동 이전하지 않습니다.
+전체 제품 설명은 [프로젝트 요약](PROJECT_OVERVIEW.md), 생성 분기는 [그림 생성 상세](IMAGE_GENERATION.md)를 봅니다.
 
 ## API 계약
 
 | FE 기능 | HTTP 경로 (`/api/studio` 기준) |
 | --- | --- |
 | 자료 목록·조회·삭제 | `GET /projects`, `GET/DELETE /projects/{id}` |
-| 업로드 + 분석 | `POST /projects/text`, `POST /projects/pdf` |
+| 입력 + 분석 | `POST /projects/text`, `POST /projects/pdf` |
 | 제목·설정 | `PATCH /projects/{id}/title`, `PUT /projects/{id}/settings` |
 | 원문 | `GET /projects/{id}/source` |
 | 사건 구조 | `GET/PUT /projects/{id}/structure` |
-| 초안·자동 저장 | `POST /projects/{id}/document/generate`, `GET/PUT /projects/{id}/document` |
+| 글 초안 | `POST /projects/{id}/document/generate` |
+| 편집 진입 그림 자동 준비 | `POST /projects/{id}/document/prepare-images` |
+| 문서 조회·자동 저장 | `GET/PUT /projects/{id}/document` |
 | 문장·용어 보조 | `POST /projects/{id}/assist/{simplify,split,terms,explain}` |
 | 그림 후보·업로드 | `POST /projects/{id}/assist/{images,upload-image}` |
+| 그림 바이너리 | `GET /assets/{assetId}` (인증 없음) |
 | 검토 | `GET /projects/{id}/review`, `POST /projects/{id}/review/{run,dismiss,dismiss-all,restore,complete}` |
 | 게시본 | `GET/POST /projects/{id}/publications`, `GET /projects/{id}/publications/{publicationId}` |
 | 공개·해제 | `PUT /projects/{id}/public` (`publicationId` 또는 null) |
 | 독자 | `GET /reader/{id}` (인증 없음) |
 | 가상 샘플 | `GET /demo/sample-text` |
-| 개발 초기화 | `POST /demo/reset` (운영 환경은 403) |
+| 개발 초기화 | `POST /demo/reset` (운영 환경 또는 실제 AI 모드에서는 403) |
 
-공개 읽기 API 외에는 Bearer 토큰이 필요합니다. 기본값인 익명 모드(`AUTH_MODE=anonymous`)에서는
-브라우저가 만든 방문자 ID처럼 16자 이상의 아무 토큰이나 자기 작업함이 되고, `AUTH_MODE=keys`에서는
-`API_KEYS`에 등록한 토큰만 통과합니다. AI 키는 BE 환경변수에만 저장합니다.
-FE 원격 저장소는 변경하지 않았습니다. 로컬 FE는 HTTP transport를 연결해 테스트할 수 있습니다.
-원격 FE의 `createMockApi()`는 BE 배포만으로 전환되지 않으며 API 구현 선택을 바꿔야 합니다.
+## 연결·인증
 
-FE의 원문 근거 오프셋은 JavaScript UTF-16 코드 단위입니다. 이모지·보조 평면 문자 경계도 검증합니다.
-실제 AI가 만드는 구조·초안의 근거는 인용문으로 받아 서버가 위치로 바꿉니다(`studio_domain.resolve_quotes`).
-자동 저장은 `saveRevision`, 구조 저장은 `revision`으로 동시 수정 충돌을 검사합니다.
-`contentRevision`과 초안의 기준 버전은 서버가 결정합니다.
+FE의 `NEXT_PUBLIC_STUDIO_API_URL`은 BE origin이며 기본값은 `http://127.0.0.1:8100`입니다.
+이 값은 빌드 시 반영되므로 운영 주소 변경 시 FE를 다시 빌드합니다.
+BE의 `CORS_ORIGINS`에는 호출하는 FE origin을 쉼표로 지정합니다.
 
-구조·설정·문장·근거·검증 표시가 바뀌면 현재 검토는 해제됩니다. 검토 항목 확인의
-메모는 기존 FE와 같이 선택 사항입니다. 자동 점검은 규칙 기반이며 원문 근거가 없는 문장, 원문에 없는 숫자,
-60자를 넘는 문장만 항목으로 만듭니다. 주장·판단 구분과 그림의 뜻은 최종 체크리스트에서 제작자가 직접 확인합니다.
-미검토 게시본은 제작자만 조회하고 인쇄할 수 있습니다. 공개는 검토 완료 게시본만 가능합니다.
-게시본은 불변 스냅샷이며 원문 근거·검토 메모·작성 기록은 독자 응답에 포함되지 않습니다.
-삭제는 soft delete이고 공개 읽기도 즉시 중단됩니다.
+독자·그림 파일 외의 업무 API는 Bearer 토큰이 필요합니다.
+기본 `AUTH_MODE=anonymous`는 브라우저 방문자 ID처럼 허용된 영문·숫자·`._~-` 토큰(16~200자)을 작업함 구분자로 사용합니다.
+브라우저 저장소를 지우거나 다른 브라우저를 쓰면 새 작업함이 됩니다.
+`AUTH_MODE=keys`는 BE의 `API_KEYS`에 등록한 토큰만 받습니다.
 
-## 현재 그림·출력 동작
+FE의 `NEXT_PUBLIC_STUDIO_API_TOKEN`에 등록 토큰을 넣으면 모든 방문자가 그 값으로 같은 작업함을 사용합니다.
+이 값은 공개 번들에 노출되므로 개인 로그인이나 비밀 API 키로 취급하지 않습니다.
+OpenAI·Comfy·Turso 키는 BE 환경변수에만 넣습니다. 별도 회원가입·로그인 API는 없습니다.
 
-편집 페이지에 진입하면 `POST /projects/{id}/document/prepare-images`를 자동 호출합니다.
-`{document,project,generation:{status,phase,completed,total,currentCardId}}`에서
-`status=running`이면 같은 POST를 이어 호출하고 `ready/skipped` 뒤 편집기를 엽니다.
-진행 중에는 편집·자동 저장을 시작하지 않습니다. 인물 초상을 모두 먼저 만들고
-고정한 다음 참조 장면을 만들며 각 그림을 서버가 자동으로 document에 붙입니다.
-사용자는 개별 생성·선택·저장을 할 필요가 없습니다. 새로고침하면 완료 그림을 건너뛰며,
-완료 이후 장면 그림을 제거하더라도 재진입 때 임의로 재생성하지 않습니다.
-생성 실패·접수 불확실은 자동 재시도하지 않고 오류를 표시합니다. 요청 취소는 원격 작업 취소가 아닙니다.
-등장인물 그림의 교체·삭제 및 인물 카드 제거는 UI와 서버에서 막습니다(`409 character_locked`).
-글·장면 그림·대체텍스트는 계속 편집할 수 있고 초안 재생성도 기존 인물 그림을 유지합니다.
-`demo` 또는 그림 없음 설정은 실제 생성 없이 `skipped`입니다.
+## 응답과 저장 버전
 
-`POST /projects/{id}/assist/images`는 `{cardId}`를 받아 `{candidates:[{src,alt,meaning}]}`를 반환합니다.
-`AI_PROVIDER=openai`와 OpenAI·Comfy 키가 설정되면 해당 카드의 그림 1장을 생성하고 업로드한 그림과 함께 후보로 제공합니다.
-초안 생성은 글을 만들고 편집 진입에서 모든 그림을 자동 생성·적용합니다.
-이후 장면 그림 변경에만 **그림 후보 보기**와 후보 적용·문서 저장을 사용합니다.
-동일 내용은 저장된 그림을 재사용하며, 카드 내용이 바뀌면 새 그림을 생성합니다.
-등장인물 카드(`role=person`, `partyId` 지정)의 그림을 먼저 적용하고 문서 저장을 마치면,
-결론·주장·판단·배경 카드의 그림 생성 시 해당 인물 그림을 Comfy의 실제 이미지 레퍼런스로 자동 전달합니다.
-등장인물 이름·역할·설명도 함께 참고하며 API 요청·응답 형식과 프론트 UI 변경은 필요 없습니다.
-후보만 생성하고 저장하지 않은 그림은 사용하지 않습니다. 프로젝트에서 연결하는 PNG/JPEG/WebP 기준 그림은 최대 6개입니다.
-참조가 있는 장면은 **Qwen-Image-Edit-2511 (FP8, 40 steps, CFG 4)**로 편집 생성합니다.
-기본 `STUDIO_CHARACTER_MODE=library`에서는 GPT가 번들 캐릭터 10종 중 서로 다른 캐릭터를 선택하고 partyId별 배정을 저장합니다. 실제 당사자의 외모를 재현하지 않는 가상 인물입니다. 등장인물 카드에는 선택한 기본 포즈의 얼굴 크롭(768×768)을 표시하고, 장면의 OpenAI 외형 분석 및 Comfy Qwen 입력에는 같은 캐릭터의 한 명짜리 기본 포즈 원본을 전달합니다. 4포즈 시트 전체나 얼굴 크롭을 장면 레퍼런스로 보내지 않습니다. 이 경로는 별도 화풍 샘플을 섞지 않으며 Qwen 참조 장면은 40 steps, CFG 4, 정사각형 768×768입니다. 기존 적용·고정 인물과 진행 중 유료 작업은 변경하지 않습니다. 선택한 인물은 새로고침·추가 컷·초안 재생성에도 유지합니다. 프로젝트 기준 그림 6개, 장면 참조 3개 제한은 그대로입니다. API 계약과 FE 코드는 바꿀 필요가 없습니다. 인물 얼굴 자산 생성에는 Comfy 호출이 없고 최초 GPT 선택만 필요합니다. 장면 외형 일치는 제작자가 결과를 확인해야 합니다.
+입력 API는 분석·저장한 `project` 객체를 반환합니다. 원문과 구조는 별도 GET으로 조회합니다.
+글 생성은 `{document, project}`를 반환하고 그림 생성은 하지 않습니다.
+문서 PUT은 전체 `EasyDocument`를 보내는 방식이며 부분 PATCH가 아닙니다.
 
-`STUDIO_CHARACTER_MODE=generate` 및 기존 자료의 호환 경로에서는 아래처럼 새 초상을 생성합니다.
-새 초상과 장면은 번들 화풍 샘플을 실제 이미지로 넣은 Qwen Edit 40 steps를 사용합니다. 샘플은 분위기만 가볍게 참고하도록 지시하며 인물·구도를 복사하지 않습니다. 인물 외형·상황이 우선이고 수치형 스타일 강도는 없습니다. 새 초상은 768×768 빈 latent에서 생성하며 한 명·흰 배경 검사는 유지합니다.
-인물 참조가 3개면 인물 슬롯을 우선하여 별도 샘플은 생략합니다. 기존 적용 그림·고정 인물·완료 일괄 작업은 변경하지 않습니다. API 계약이나 프론트 수정은 필요 없습니다.
-접수 전 구형 참조 그래프만 40 steps로 바꾸고 접수된 작업과 접수 불확실 작업은 원래 설정으로 이어 조회합니다.
-카드의 partyId와 문장·원문 근거의 인물 이름/역할로 관련 참조를 선택하고 번호를 다시 매깁니다.
-인물이 불명확하면 참조를 임의로 제외하지 않습니다. Qwen 장면에 전달할 참조가 3개를 초과하면
-유료 장면 설계·생성 전에 `422 character_reference_limit`입니다. 인물을 명확히 적거나 카드를 나누세요.
-샘플이 없는 구형 호환 경로는 초상 **Qwen-Image-2512 (FP8, 768×768, 20 steps, CFG 4)**, 참조 없는 장면 **FLUX.2 Dev (768×768, 20 steps)**입니다.
-장면은 초상과 별도 설계로 핵심 행동·주체/대상·배치/시선/손동작·사물 상태·의미 구분을 구조화하여 생성합니다.
-장면의 흰 배경 강제를 제거하고 원문 근거에 있는 상황만 표현합니다. 장소가 없으면 중립적인 공간을 사용합니다.
-주장을 확정 사실로 재현하거나 지급 명령을 지급 완료로 그리지 않도록 지시하며 인물 외형은 기준 그림을 유지합니다.
-인물 초상은 한 명·빈 흰 배경 그대로입니다. FE 요청/응답 계약과 AI 호출 횟수는 바꾸지 않습니다.
-기존 적용 그림과 완료된 일괄 작업은 자동 교체하지 않습니다. 새 요청에는 새 장면 설계를 사용하며 접수된 작업은 재제출하지 않습니다.
-실제 장면 품질은 생성 결과로 확인해야 하며 테스트는 외부 AI 모의 응답입니다.
-모든 새 그림의 스타일 요구는 **단순한 애니메이션 이미지 또는 삽화** 한 문장입니다.
-외형 분석에서 나온 그림체 설명은 생성 지시로 전달하지 않으며 참조 인물의 얼굴·머리·옷·색만 유지합니다.
-Qwen Edit의 negative prompt는 비워 두고 초상에는 인원수·배경·글자·얼굴 구도 조건만 남깁니다.
-구형 완료 후보 캐시는 재사용하지 않으며 접수 전 그래프는 재구성합니다. 기존 고정 그림과 이미 접수된 유료 작업은 유지합니다. 결과 스타일을 100% 보장하는 검사는 아닙니다.
-초상은 한 명·빈 순수 흰 배경 조건을 positive/negative prompt로 지정하고 저장 전에 GPT 이미지 분석으로 검사합니다.
-불통과하면 422 `portrait_composition_invalid`로 자동 적용·고정을 중단합니다. 같은 요청은 검사 결과를 재사용하고 유료 생성 작업을 다시 제출하지 않습니다.
-검사 장애는 이미 생성된 결과의 검사만 다시 시도합니다. 이미 고정된 인물은 유지합니다. AI 구도 검사는 정확성을 보장하지 않습니다.
-새 인물 초상은 같은 자료의 다른 저장된 인물의 실제 외형을 비교하여 얼굴형·헤어스타일·옷 색 등 적어도 두 가지 특징을 구별하도록 설계합니다.
-기존 외형 분석 캐시를 재사용하고 비교 대상을 작업에 고정합니다. 기존 인물을 함께 그리거나 Qwen Edit 참조로 복사하지 않습니다.
-기존 고정 인물은 바뀌지 않으며, 외형 구별은 생성 지시이고 결과의 차이를 자동 보증하지는 않습니다.
-Qwen 출력은 첫 참조의 비율을 약 1MP로 정규화한 뒤 가로·세로를 75%로 축소하며 정사각형 참조이면 768×768입니다.
-기준 그림은 OpenAI 이미지 입력으로 읽어 얼굴·머리·수염 유무·상의·하의·신발을 고정 외형으로 저장합니다. 같은 소유자·프로젝트·자산의 동일 픽셀은 분석 결과를 재사용합니다. 장면 생성 결과를 외형 검사로 차단하거나 자동 보정하지 않고 후보로 반환합니다. 이전 외형 검사에서 제외된 작업도 같은 요청으로 기존 결과를 다시 조회합니다. 한 사람을 특정할 수 없는 기준 그림은 422 character_reference_unclear입니다. 외형 유지 지시가 완벽한 일치를 보장하지 않으므로 후보를 직접 확인합니다.
-기준이 없거나 등장인물 카드 자체를 생성할 때는 외형 검사 없이 기존 텍스트 기반 생성입니다. SVG·기준 충돌·개수 초과는 `422 character_reference_*`로 안내합니다.
-등장인물 정보나 적용한 그림을 변경하면 다음 생성은 새 작업이 됩니다. 기존 결과는 자동으로 교체하지 않습니다.
-FE 후보 캐시에 이전 결과가 있으면 저장 후 새로고침하여 실제 요청을 보내세요.
-생성 중 인물 기준이 바뀌면 `409 image_card_changed`를 반환합니다.
-대기 시간 초과는 `503 image_in_progress`이고 기존 FE 다시 시도로 같은 작업을 이어서 확인합니다.
-접수 불확실·실행 실패는 자동 유료 재생성을 하지 않습니다. 자세한 처리 방식은 README를 참고합니다.
+문서 `saveRevision`, 구조 `revision`은 직전 응답 값을 보냅니다.
+충돌(409)에서는 최신 응답과 사용자 변경을 합친 뒤 다시 저장합니다.
+`contentRevision` 및 초안의 기준 버전은 서버가 결정합니다.
+원문 근거 `anchors[].start/end`는 문단 text의 JavaScript UTF-16 인덱스(시작 포함·끝 미포함)입니다.
+실제 AI는 원문 인용문을 반환하고 서버가 문단 안에서 위치를 찾습니다.
 
-PNG/JPEG/WebP 및 제한된 안전한 SVG 업로드를 정제해 저장합니다. 생성 결과도 서버가 PNG로 보관하고
-인증 없는 `GET /api/studio/assets/{id}` 주소로 내주므로 Comfy 서명 URL이 만료돼도 표시됩니다. 문서·게시본·독자 응답의
-`src`는 이 절대 주소이며 프론트는 그대로 `<img src>`에 씁니다. FE의 PDF 저장은 기존 `/print` 화면과 브라우저 인쇄를 사용합니다.
+## 편집 진입 그림 자동 준비
 
-PDF는 4.5MB(요청 본문 4.5MB 제한이 있는 호스팅에 맞춘 값), 그림 파일은 2MB입니다. PDF 원본은 추출 뒤 버리고 텍스트만 저장합니다. 자료의 정제 그림 전체는
-12MB까지 보관합니다. 추후 Vercel 프록시로 연결할 경우 플랫폼 요청 한도에 유의하고, 큰 파일은
-BE 직접 업로드 또는 객체 저장소 업로드 경로를 사용해야 합니다.
+글 생성 후 `POST /projects/{id}/document/prepare-images`를 이어 호출합니다.
+응답은 `{document,project,generation:{status,phase,completed,total,currentCardId}}`입니다.
+
+- `running`: 같은 POST를 이어 호출합니다. 요청당 최대 카드 하나만 처리합니다.
+- `ready`: 전체 적용 완료. 최신 문서와 project를 캐시에 넣고 편집기를 엽니다.
+- `skipped`: demo 또는 그림 없음 설정. 실제 생성 성공으로 표시하지 않습니다.
+
+기본 library 모드는 GPT 선택 → 고정 캐릭터 얼굴 크롭 저장 → 인물 고정 → Qwen 장면 자동 적용 순서입니다.
+카드 표시용 얼굴과 장면 입력용 기본 포즈 원본은 서버가 구분하므로 새 FE 필드가 필요 없습니다.
+같은 캐릭터를 장면에 실제 레퍼런스로 넣지만 완벽한 얼굴 일치를 보장하지 않습니다.
+10종 후보와 자동 준비의 인물 상한 6명·장면 상한 3명은 서로 다른 수치입니다.
+
+진행 중 FE는 편집·자동 저장을 시작하지 않습니다.
+현재 FE는 실패 시 다시 시도 또는 “생성된 자료로 편집 계속하기”로 부분 결과를 열 수 있습니다.
+부분 편집 진입은 남은 그림을 완료했다는 뜻이 아닙니다.
+페이지를 떠나면 남은 카드 처리는 멈추고 재진입 시 완료 카드를 건너뛰며 진행 중 원격 작업을 조회합니다.
+브라우저 요청 취소는 Comfy 작업 취소가 아닙니다.
+
+인물 그림 교체·삭제 및 고정 인물 카드 제거는 `409 character_locked`로 차단합니다.
+글·장면·대체텍스트는 계속 편집할 수 있습니다.
+완료한 일괄 작업에서 장면을 제거하거나 새 카드를 추가해도 진입만으로 자동 재생성하지 않습니다.
+새 장면은 후보 API로 만들고, 초안 재생성은 고정 인물을 유지하면서 새 장면의 일괄 작업을 초기화합니다.
+
+## 그림 후보와 업로드
+
+`POST /projects/{id}/assist/images`는 `{cardId}`를 받습니다.
+저장된 카드·문장·원문 근거를 사용하므로 자동 저장 완료 후 요청합니다.
+후보 응답은 `{candidates:[{src,alt,meaning}]}`이며 이 요청 자체는 문서에 적용하지 않습니다.
+선택한 후보를 document.images와 card.imageId에 연결해 PUT document로 저장합니다.
+
+실제 AI의 library 인물 후보는 고정 캐릭터 얼굴 자산입니다.
+장면 생성에는 Comfy 키가 필요합니다. demo는 업로드 후보만 반환합니다.
+`source=library`는 stock 얼굴과 생성 장면 모두에서 사용하는 기존 자산 분류입니다.
+동일 내용은 결과·작업을 재사용하지만 문맥 변경 후 요청은 새 유료 작업이 될 수 있습니다.
+
+업로드는 multipart의 file·alt·meaning을 받으며 PNG/JPEG/WebP 및 제한된 안전 SVG를 정제·보관합니다.
+업로드 성공도 카드에 자동 연결하지 않습니다.
+그림 업로드는 2MiB, 자료당 이미지 100개·합계 12MiB입니다. 연결을 해제해도 자산은 용량에 남습니다.
+생성 결과와 업로드 그림의 src는 서버가 보관한 절대 주소이며 그대로 `<img src>`에 사용합니다.
+임의 외부 URL은 문서 그림으로 저장하지 못합니다.
+
+후보 API는 Comfy 진행 중에 `503 image_in_progress`를 반환합니다.
+일괄 준비는 카드 생성의 이 오류를 보통 `200 running`으로 변환합니다.
+접수 불확실·실행 실패·만료 작업을 자동 새 유료 작업으로 바꾸지 않습니다.
+동일 요청 재조회와 재생성을 구분해 오류를 표시합니다. 자세한 호환·재시도 정책은 그림 생성 문서를 봅니다.
+
+## 검토·게시·출력
+
+자동 검토는 근거 없는 문장(required), 원문 전체에 없는 숫자(suggested),
+60자 초과 문장(suggested)만 점검합니다.
+인물 관계·주장/판단 구분·그림 의미·빈 대체텍스트를 자동으로 판정하는 기능은 없습니다.
+금액·관계·주장, 그림 사용 시 글그림 의미는 최종 체크리스트에서 제작자가 확인합니다.
+
+게시본 생성과 공개는 별도 API입니다. 미검토 게시본은 제작자만 문서로 조회하고 인쇄할 수 있습니다.
+검토 완료 게시본만 공개할 수 있고 독자 응답에는 원문 근거·검토 메모·작성 기록이 없습니다.
+이 문서 접근 제한과 그림 파일 접근은 다릅니다. 그림 URL은 인증 없이 조회됩니다.
+공개 해제는 그림 URL 회수가 아니고 soft delete도 그림 파일 물리 삭제가 아닙니다.
+
+PDF 저장은 FE의 `/print/[id]?publication=...` 화면과 브라우저 인쇄입니다.
+BE PDF 다운로드·영상·카드뉴스 PNG 출력 API는 없습니다.
+PDF 입력은 원본 4,500,000바이트·100쪽 이하이며 OCR은 없습니다.
+새 PDF 원본은 저장하지 않지만 추출 텍스트·메타데이터는 DB에 남습니다.
+현재는 큰 파일을 위한 직접 객체 저장소 업로드 API를 제공하지 않습니다.
 
 ## 서버 배포
 
+Vercel 배포는 [Vercel + Turso 매뉴얼](DEPLOY-VERCEL-TURSO.md)을 봅니다.
+아래는 Docker Compose·Caddy를 쓰는 별도 서버 구성입니다.
+
 Docker Compose가 설치된 Linux 서버와 해당 서버를 가리키는 DNS가 필요합니다.
-80/443 포트를 열고 다음을 실행합니다. API 컨테이너 포트는 호스트에 직접 노출하지 않습니다.
+80/443 포트를 열고 실행합니다. API 컨테이너 포트는 호스트에 직접 노출하지 않습니다.
 
 ```bash
 git clone git@github.com:meatproxy-wanted/ihaerostudio-be.git
 cd ihaerostudio-be/deploy
 cp .env.example .env
-# .env에 API_DOMAIN, 랜덤 API_KEYS, OPENAI_API_KEY, OPENAI_MODEL, COMFY_CLOUD_API_KEY 입력
+# API_DOMAIN, CORS_ORIGINS, PUBLIC_BASE_URL, OpenAI 키·모델, Comfy 키를 설정
+# keys 모드라면 별도의 충분히 긴 API_KEYS도 설정
 chmod 600 .env
 docker compose up -d --build --wait
 curl --fail https://YOUR_API_DOMAIN/health
 ```
 
-Caddy가 HTTPS 인증서를 발급·갱신합니다. SQLite와 인증서는 이름 있는 Docker 볼륨에
-보존됩니다. `docker compose down -v`는 데이터를 삭제하므로 사용하지 마세요.
-업데이트 전 SQLite 온라인 백업을 별도 보관하고, 확인한 커밋으로 checkout한 후 위 명령으로
-다시 빌드합니다. 문제가 생기면 이전 커밋으로 checkout하여 재빌드합니다. 자동 데이터 마이그레이션
-되돌리기는 제공하지 않습니다.
+`PUBLIC_BASE_URL=https://YOUR_API_DOMAIN`을 자료 생성 전에 지정합니다.
+Caddy가 HTTPS 인증서를 발급·갱신합니다. SQLite·인증서는 Docker 볼륨에 보존됩니다.
+`docker compose down -v`는 데이터를 삭제하므로 사용하지 않습니다.
+업데이트 전 SQLite 온라인 백업과 현재 커밋을 기록합니다. 문제가 생기면 이전 코드로 재빌드합니다.
+자동 데이터 마이그레이션 되돌리기는 없습니다.
 
-로컬 화면 검증은 `AI_PROVIDER=demo`로 가능합니다. 데모는 실제 입력의 표제만 분류하고
-원문을 복사합니다. 실제 쉬운 글·용어 생성에는 `AI_PROVIDER=openai`와 유효한 키/모델이 필요하며,
-키가 없을 때 실제 AI인 것처럼 대체 응답하지 않습니다.
+## 계약 검증
 
-## 양쪽 계약 검증
-
-FE 원본을 수정하지 않는 로컬 브라우저 테스트 환경:
+FE를 수정하지 않고 현재 zod 스키마로 BE 응답을 검사합니다.
 
 ```bash
-python scripts/prepare_frontend_test.py --frontend ../ihaerostudio-fe --output ../integration-fe-new
-# BE 서버
-AI_PROVIDER=demo CORS_ORIGINS=http://127.0.0.1:3100 uvicorn app.main:app --host 127.0.0.1 --port 8100 --no-access-log
-# 생성된 integration-fe-new 디렉터리의 별도 터미널
-node_modules/.bin/next build --webpack
-node_modules/.bin/next start --hostname 127.0.0.1 --port 3100
-```
-
-테스트 복사본에만 HTTP transport와 `ApiClient` 선택 코드를 넣습니다. FE 화면·스토어·스키마는
-원본 그대로이며 로그인 UI를 추가하지 않습니다. 개발용 토큰은 로컬 테스트 transport에만 들어갑니다.
-이 복사본을 운영 배포하지 마세요. 화면의 기존 데모 안내 문구도 변경하지 않아 그대로 보입니다.
-
-두 저장소가 이웃 디렉터리에 있을 때:
-
-```bash
-# BE
-STUDIO_CONTRACT_OUT=../studio-contract.json .venv/bin/python -m pytest tests/test_studio.py -q
+STUDIO_CONTRACT_OUT=../studio-contract.json .venv/bin/python -m pytest -q
 node scripts/verify_frontend_contract.mjs ../ihaerostudio-fe ../studio-contract.json
 ```
 
-백엔드 TestClient가 업로드부터 공개/해제까지 실행한 **실제 응답**을 내보냅니다.
-FE 저장소 밖에서 별도 계약 검사를 실행하면 원본 FE의 zod 스키마로 검증할 수 있습니다.
-AI 호출의 기본 통합 테스트는 유료 외부 API를 호출하지 않습니다. 운영 키와 배포 주소에서의
-실제 생성 품질 및 네트워크 검증은 별도 배포 단계에서 수행해야 합니다.
+BE TestClient의 업로드부터 공개/해제까지 실제 응답을 내보내 검증합니다.
+AI 제공자 응답은 모의 처리하므로 유료 생성 품질·운영 네트워크 검증은 별도입니다.
+
+현재 FE는 이미 HTTP로 연결되므로 보통 별도의 테스트 복사본이 필요하지 않습니다.
+`scripts/prepare_frontend_test.py`는 구형 FE를 위한 진단 도구이며 테스트 전용 transport로 교체합니다.
+그 복사본을 현재 운영 FE나 인증·이미지 자동 준비 계약의 기준으로 삼거나 배포하지 않습니다.

@@ -1,119 +1,119 @@
 # Vercel + Turso 배포 매뉴얼
 
-이 문서는 백엔드(`ihaerostudio-be`)와 프론트(`ihaerostudio-fe`)를 각각 Vercel 프로젝트로 올리고, 자료 저장소로 Turso를 쓰는 절차입니다. 로그인 없는 공개 체험용 구성(익명 모드)을 전제로 합니다.
+현재 FE(Next.js)와 BE(FastAPI)를 별도 Vercel 프로젝트로 배포하고 Turso에 자료·그림을 저장하는 구성입니다.
+이 문서는 저장소 설정 기준입니다. 플랫폼 플랜·가격·UI·리전·시간/본문 한도는 바뀔 수 있으므로 배포 시 계정의 실제 설정을 확인합니다.
+무료 운영 가능 여부나 특정 모델의 사용 권한을 보장하지 않습니다.
 
-## 구성 요약
+## 구성
 
-| 역할 | 어디에 | 비용 |
+| 역할 | 배포 대상 | 확인 사항 |
 | --- | --- | --- |
-| 프론트 (Next.js) | Vercel 프로젝트 1 | Hobby 무료 |
-| 백엔드 (FastAPI) | Vercel 프로젝트 2 (Python 함수) | Hobby 무료. 함수 최대 300초 |
-| 자료·그림 저장 | Turso (SQLite 호환 원격 DB) | Free 무료. 카드 없이 5GB, 월 5억 행 읽기 |
-| AI | OpenAI, Comfy Cloud | 사용량 과금. 키는 백엔드 환경 변수에만 |
+| FE | Vercel Next.js 프로젝트 | BE 주소는 빌드 시 반영 |
+| BE | Vercel FastAPI/Python 프로젝트 | 진입점 `app/main.py`의 `app` |
+| 자료·이미지·작업 상태 | Turso | 로컬 임시 디스크를 영속 DB로 사용하지 않음 |
+| GPT | OpenAI API | 분석·글·캐릭터 선택·장면 설계와 레퍼런스 이미지 분석 |
+| 장면 이미지 | Comfy Cloud Qwen 워크플로우 | 계정 크레딧, 모델·노드 가용성, 결과 호스트 |
 
-브라우저는 프론트 도메인을 열고, 프론트가 백엔드 도메인의 `/api/studio`를 직접 호출합니다(CORS). 그림은 백엔드가 Turso에 저장하고 `/api/studio/assets/{id}` 주소로 내줍니다.
+서버 환경변수의 OpenAI·Comfy·Turso 키를 FE 또는 Swagger Authorize에 넣지 않습니다.
+브라우저는 FE에서 BE의 `/api/studio`를 직접 호출하므로 CORS가 필요합니다.
+기본 library 모드의 캐릭터 얼굴은 번들 이미지 크롭이며 Qwen을 호출하지 않습니다.
+Qwen은 상황 그림 생성에 사용합니다.
 
-## 0단계. 코드 준비 (완료)
+## 1. DB와 BE 준비
 
-백엔드에 다음이 들어가 있습니다. 따로 할 일은 없습니다.
+GitHub 조직의 두 저장소에 Vercel 연동 권한이 있는지 확인합니다.
+백엔드 저장소 루트를 프로젝트 Root Directory로 선택하고 FastAPI 진입점이 올바르게 감지되는지 확인합니다.
+Turso DB URL·토큰을 먼저 준비하거나 Marketplace 연동을 사용합니다.
+Marketplace가 어떤 변수 이름을 만들었든 아래 **코드가 읽는 이름**으로 실제 값이 들어 있는지 확인합니다.
 
-- [x] 저장소 분기: `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`이 있으면 Turso로, 없으면 지금처럼 로컬 SQLite 파일로 연결. `/health`의 `storage`가 `turso` 또는 `sqlite`로 알려 줌
-- [x] 그림을 자료 JSON에서 분리해 별도 테이블에 저장하고 `GET /api/studio/assets/{id}`로 제공. 문서·게시본·독자 응답의 `src`는 그 주소(응답 4.5MB 제한 대응). 프론트는 바꿀 것 없음
-- [x] `vercel.json`: 함수 최대 시간 300초, 테스트·문서 폴더 번들 제외
-- [x] `PUBLIC_BASE_URL`(선택): 그림 주소를 만들 때 쓰는 백엔드 공개 주소. 비우면 Vercel이 주는 프로젝트 주소를 씀. 그림 URL에 저장되므로 자료를 만들기 전에 정해야 함
-- [x] 로컬 개발과 pytest는 변함없이 SQLite 파일로 동작하고, Turso 경로도 테스트로 확인함
-
-## 1단계. 계정과 권한
-
-1. Vercel 계정을 만들고 GitHub와 연결합니다. 저장소가 `meatproxy-wanted` 조직 아래에 있으므로, Vercel의 GitHub 앱을 **그 조직**에 설치하고 두 저장소 접근을 허용합니다.
-2. Turso는 Vercel Marketplace에서 만들 것이므로 따로 가입할 필요가 없습니다. 이미 Turso 계정이 있으면 그것을 연결해도 됩니다.
-3. OpenAI 키, 모델 ID(예: `gpt-5.6-luna`), 필요하면 Comfy Cloud 키를 준비합니다. 로컬 `.env`에 있는 값 그대로입니다.
-
-## 2단계. 백엔드 프로젝트 만들기
-
-1. Vercel 대시보드 → **Add New → Project** → `ihaerostudio-be` 선택.
-2. Framework Preset이 **FastAPI**로 잡히는지 확인합니다. Root Directory는 저장소 루트 그대로 둡니다. 진입점은 `app/main.py`의 `app`이라 Vercel이 자동으로 찾습니다.
-3. **Environment Variables**에 다음을 넣습니다(Production 환경).
-
-| 변수 | 값 | 비고 |
-| --- | --- | --- |
-| `AI_PROVIDER` | `openai` | |
-| `OPENAI_API_KEY` | 키 | |
-| `OPENAI_MODEL` | `gpt-5.6-luna` 등 | |
-| `OPENAI_MAX_OUTPUT_TOKENS` | `16384` | 응답이 잘리면 `32768` |
-| `COMFY_CLOUD_API_KEY` | 키 | 그림 생성을 쓸 때만 |
-| `APP_ENV` | `production` | |
-| `AUTH_MODE` | `anonymous` | 기본값과 같지만 명시 |
-| `CORS_ORIGINS` | 일단 `http://localhost:3000` | 4단계에서 프론트 주소로 바꿈 |
-| `PUBLIC_BASE_URL` | (비움) | 커스텀 도메인을 쓸 때만 `https://그도메인`. 비우면 프로젝트 주소 |
-
-`TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`은 3단계에서 자동으로 들어옵니다.
-
-4. **Deploy**를 누릅니다. 첫 배포는 Turso가 아직 없어서 시작에 실패하거나 저장이 안 될 수 있습니다. 3단계 뒤 다시 배포합니다.
-
-## 3단계. Turso 만들고 연결하기
-
-1. 백엔드 프로젝트 → **Storage** 탭 → **Create Database** → **Turso Cloud** 선택 (Marketplace 연동).
-2. 데이터베이스 이름을 정하고(예: `ihaerostudio`), 위치는 Vercel 함수 리전과 가까운 곳으로 고릅니다. Hobby의 기본 함수 리전은 미국 동부(`iad1`)이므로 AWS `us-east-1` 계열을 고릅니다. 플랜은 Free.
-3. **Connect Project**에서 백엔드 프로젝트를 선택합니다. 그러면 `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`이 백엔드 환경 변수에 자동으로 들어갑니다. 백엔드 코드는 이 두 이름을 그대로 읽습니다.
-4. 백엔드를 **Redeploy**합니다(Deployments → 최신 항목 → Redeploy). 테이블은 서버가 시작할 때 스스로 만듭니다.
-5. 확인: 브라우저에서 `https://<백엔드주소>/health`를 열어 `"ai_provider":"openai"`와 `"storage":"turso"`가 보이면 됩니다. `"storage":"sqlite"`면 Turso 변수가 안 들어간 것입니다. `https://<백엔드주소>/docs`에서 Swagger도 열립니다.
-
-CLI로 만들고 싶다면:
-
-```bash
-brew install tursodatabase/tap/turso
-turso auth login
-turso db create ihaerostudio
-turso db show ihaerostudio
-turso db tokens create ihaerostudio
-```
-
-`show`가 알려 주는 URL을 `TURSO_DATABASE_URL`에, 토큰을 `TURSO_AUTH_TOKEN`에 직접 넣으면 됩니다.
-
-## 4단계. 프론트 프로젝트 만들기
-
-1. **Add New → Project** → `ihaerostudio-fe` 선택. Framework는 Next.js로 자동 감지됩니다. 빌드 명령 `pnpm build`, Node 22가 기본으로 잡힙니다.
-2. Environment Variables:
-
-| 변수 | 값 |
+| BE 환경변수 | 값 / 의미 |
 | --- | --- |
-| `NEXT_PUBLIC_STUDIO_API_URL` | `https://<백엔드주소>` (끝에 슬래시 없이) |
-| `NEXT_PUBLIC_STUDIO_API_TOKEN` | 비워 둠 (브라우저별 익명 ID 사용) |
+| `AI_PROVIDER` | `openai` (유료 생성 없이 연결만 확인할 때 `demo`) |
+| `OPENAI_API_KEY` | 서버 전용 API 키 |
+| `OPENAI_MODEL` | 해당 API 계정에서 사용 가능한 Responses·Structured Outputs·이미지 입력 지원 모델 ID |
+| `OPENAI_MAX_OUTPUT_TOKENS` | 기본 `16384`. 실제 모델·응답 크기에 맞춰 조정 |
+| `STUDIO_CHARACTER_MODE` | `library` (기본) |
+| `COMFY_CLOUD_API_KEY` | 장면 자동 준비·후보 생성에 필요 |
+| `TURSO_DATABASE_URL` | Turso DB URL |
+| `TURSO_AUTH_TOKEN` | 해당 DB 접근 토큰 |
+| `APP_ENV` | `production` |
+| `AUTH_MODE` | 공개 체험용 `anonymous` 또는 제한용 `keys` |
+| `API_KEYS` | keys 모드라면 충분히 긴 등록 토큰 → 제작자 ID JSON |
+| `CORS_ORIGINS` | 실제 FE origin. 여러 개는 쉼표로 구분 |
+| `PUBLIC_BASE_URL` | 안정적인 BE 공개 origin. Production 도메인 자동값을 쓸 수도 있음 |
+| `COMFY_ASSET_ALLOWED_HOSTS` | 기본 `cloud.comfy.org,storage.googleapis.com`. 실제 결과 CDN은 확인 후 정확한 호스트만 추가 |
 
-3. **Deploy**. 끝나면 `https://<프론트주소>`가 생깁니다.
-4. 백엔드 프로젝트로 돌아가 `CORS_ORIGINS`를 `https://<프론트주소>`로 바꾸고 **Redeploy**합니다. 미리보기 배포 주소도 허용하려면 쉼표로 이어 적습니다.
+`vercel.json`의 `maxDuration`은 현재 300초로 **요청**합니다.
+계정의 허용 상한과 런타임 적용 여부는 별도 확인합니다.
+테스트·문서·스크립트·로컬 data는 함수 번들에서 제외하고 `app/assets`는 포함합니다.
+Python 패키지 설치 경로에도 번들 캐릭터·분위기 샘플·지침이 포함되어야 합니다.
 
-## 5단계. 확인 체크리스트
+배포 후 `https://<BE>/health`에서 `storage=turso`, 의도한 `ai_provider`를 확인합니다.
+`storage=sqlite`인 Vercel 배포를 영속 저장 성공으로 해석하지 않습니다.
+이 응답은 AI 키 유효성이나 Qwen 생성 성공을 검증하지 않습니다.
+`https://<BE>/docs`에서 실제 API 문서를 확인합니다.
 
-- [ ] 프론트를 열면 작업함이 비어 있고 "서버에 연결하지 못했어요"가 뜨지 않는다
-- [ ] 새 자료 화면에 "서버가 데모 모드예요" 경고가 **없다** (있으면 `AI_PROVIDER`가 안 먹은 것)
-- [ ] [샘플 판결문으로 체험하기] → 분석 완료 → 사건 구조에 사건번호·법원이 채워진다
-- [ ] [초안 만들기] → 편집 화면 → 문장 하나를 [원문과 대조했어요] → 상단 "저장됨"
-- [ ] Comfy 키를 넣었다면 카드 → [그림 후보 보기]에서 그림이 한 장 나오고, 적용 후 새로고침해도 그림이 보인다
-- [ ] 검토 마치기 → 내보내기 → [읽기 화면 공개] → 그 주소를 시크릿 창에서 열면 읽힌다
-- [ ] 다른 브라우저(또는 시크릿 창)에서 프론트를 열면 작업함이 비어 있다 (방문자별 작업함)
-- [ ] 5MB짜리 PDF를 올리면 "4.5MB 이하의 PDF만" 안내가 뜬다
+## 2. FE 연결
 
-## 6단계. 운영에서 알아 둘 것
+프론트 프로젝트는 `ihaerostudio-fe`의 Next.js 앱입니다.
+저장소의 package manager·빌드 스크립트·Node 요구 버전을 기준으로 설정합니다.
 
-- **비용 한도**: 누구나 분석·초안·그림 생성을 누를 수 있습니다. OpenAI 대시보드의 월 지출 한도와 Comfy 크레딧 한도를 먼저 걸어 두세요. 백엔드에는 아직 호출 횟수 제한이 없습니다.
-- **Hobby 플랜 조건**: Vercel Hobby는 개인·비상업 용도 조건이 붙습니다. 회사 시연이나 사업 목적이면 Pro(월 20달러)로 올리는 편이 안전하고, 그러면 함수 시간도 800초까지 늘릴 수 있습니다.
-- **콜드 스타트**: 한동안 요청이 없으면 첫 요청이 몇 초 느립니다. 시연 직전에 한 번 열어 두세요.
-- **긴 판결문**: 분석·초안이 300초를 넘기면 504가 납니다. Luna 기준 샘플은 25초 안팎이지만, 긴 문서나 큰 모델은 Pro 플랜의 `maxDuration` 상향이 필요할 수 있습니다.
-- **자료 정리**: 지운 자료도 소프트 삭제라 Turso에 남습니다. 오래된 자료를 지우는 정리 작업은 아직 없으니 필요해지면 추가합니다.
-- **커스텀 도메인**: 각 프로젝트 Settings → Domains에서 붙입니다. 붙이면 `NEXT_PUBLIC_STUDIO_API_URL`과 `CORS_ORIGINS`도 새 주소로 바꾸고 재배포합니다. 백엔드 도메인을 바꾸면 `PUBLIC_BASE_URL`도 맞추세요. 이전 주소로 저장된 그림은 이전 주소가 살아 있는 동안만 보입니다.
-- **미리보기 배포 보호**: Vercel은 미리보기 배포에 로그인을 요구할 수 있습니다. 공개 링크로 시연할 때는 Production 주소를 쓰세요.
+| FE 환경변수 | 값 |
+| --- | --- |
+| `NEXT_PUBLIC_STUDIO_API_URL` | 안정적인 BE origin (`https://<BE>`, 끝 슬래시 없이) |
+| `NEXT_PUBLIC_STUDIO_API_TOKEN` | 공개 익명 체험에서는 비움. 등록 토큰을 넣으면 방문자 모두가 같은 작업함을 사용 |
 
-## 문제가 생기면
+`NEXT_PUBLIC_` 토큰은 공개 번들 값이며 비밀 키나 개인 로그인으로 사용하지 않습니다.
+현재 FE의 `lib/api/client.ts`는 HTTP로 연결되어 있습니다.
+이 환경변수는 빌드 시 적용되므로 변경 후 FE를 다시 배포합니다.
+BE의 `CORS_ORIGINS`도 FE 실제 Production origin과 맞추고 변경 후 BE를 다시 배포합니다.
+Preview origin은 필요한 경우에만 명시적으로 허용합니다.
 
-| 증상 | 원인 | 조치 |
-| --- | --- | --- |
-| 작업함에 "서버에 연결하지 못했어요" | 백엔드 주소가 틀리거나 백엔드가 죽음 | `NEXT_PUBLIC_STUDIO_API_URL` 확인, `/health` 열어 보기 |
-| 브라우저 콘솔에 CORS 오류 | `CORS_ORIGINS`에 프론트 주소가 없음 | 값을 고치고 백엔드 재배포 |
-| "서버가 API 토큰을 받아들이지 않았어요" | `AUTH_MODE=keys`인데 토큰이 미등록 | `AUTH_MODE=anonymous`로 |
-| 분석이 오래 걸리다 실패(504) | 함수 시간 초과 | 짧은 문서로 확인, Pro에서 `maxDuration` 상향 |
-| 배포 로그에 `OPENAI_API_KEY is required` | 환경 변수 누락 | 변수를 넣고 재배포 |
-| 배포는 됐는데 자료가 사라짐 | Turso 미연결로 임시 디스크 사용 | 3단계 확인 후 재배포 |
-| PDF 업로드 413 | 4.5MB 초과 | 파일을 줄이거나 텍스트로 붙여넣기 |
-| 그림이 깨져 보임 | 그림 주소의 도메인이 지금 백엔드와 다름 | `PUBLIC_BASE_URL`을 확인하고, 자료를 새로 만들어 그림을 다시 생성 |
+## 3. 연결 및 생성 확인
+
+먼저 외부 AI를 호출하지 않는 상태·인증·CORS를 확인합니다.
+다음 체크는 실제 API 사용량이 발생할 수 있으므로 짧은 가상 판결문으로 실행합니다.
+
+- [ ] BE Production 배포가 ready이고 해당 커밋이 배포되어 있다.
+- [ ] health의 저장소와 AI 모드가 의도한 설정이다.
+- [ ] FE 작업함이 서버에 연결되고 다른 브라우저의 익명 작업함과 분리된다.
+- [ ] 새 자료 분석 후 원문과 사건 구조를 조회할 수 있다.
+- [ ] 글 초안 생성 후 편집 진입에서 인물 얼굴과 장면 그림이 자동 적용된다.
+- [ ] 얼굴은 고정 캐릭터 크롭이며 장면은 같은 캐릭터 원본을 사용한다. 실제 외형·상황도 사람이 확인한다.
+- [ ] 새로고침 후 완료된 얼굴·장면과 캐릭터 배정이 유지된다.
+- [ ] 고정 인물은 교체·삭제할 수 없고 글·장면·대체텍스트는 편집할 수 있다.
+- [ ] 생성 실패에서 앞서 완성된 자료를 보존하고 반복 요청이 중복 유료 작업을 만들지 않는다.
+- [ ] 검토·게시본 생성·공개를 각각 마친 뒤 독자 링크를 다른 브라우저에서 읽는다.
+- [ ] FE 인쇄 화면에서 브라우저 PDF 저장이 된다. BE PDF 다운로드 API가 있다고 가정하지 않는다.
+- [ ] 공개 해제 시 reader는 unavailable이다. 그림 URL 회수까지 된 것으로 해석하지 않는다.
+
+## 운영 주의사항
+
+- 공개 익명 모드는 로그인 없는 체험용이며 서버 호출 횟수 제한이 없습니다.
+  제공자의 사용량·예산 관리 기능을 확인하고 운영 접근 정책을 따로 정합니다. 이 저장소는 비용 상한을 강제하지 않습니다.
+- 플랫폼 플랜의 사용 조건·현재 가격·함수 한도는 [Vercel 공식 문서](https://vercel.com/docs),
+  DB 저장·트래픽 한도는 [Turso 공식 문서](https://docs.turso.tech)에서 배포 시 확인합니다.
+- 텍스트 생성은 동기 응답입니다. 그림 준비는 카드당 요청이지만 GPT 분석·설계·업로드 시간까지 포함하므로 HTTP 시간이 Comfy 대기 90초보다 길 수 있습니다.
+- 페이지를 닫으면 남은 카드 요청은 멈춥니다. 원격 접수 작업은 다음 요청에서 조회하며 자동 백그라운드 완주 작업자는 없습니다.
+- 자료 삭제는 soft delete입니다. 추출 텍스트·그림의 물리 삭제·보관기간 정리 기능은 없습니다.
+- 그림은 인증 없는 asset URL입니다. 민감한 이미지나 판결문 정보를 업로드하기 전에 개인정보 정책을 확인합니다.
+- 도메인 변경 시 FE API URL·BE CORS·PUBLIC_BASE_URL을 함께 맞춥니다.
+  이전 그림 src는 DB에 저장된 이전 주소이므로 자동으로 새 도메인으로 바뀌지 않습니다. 기존 주소 유지 또는 명시적인 이전이 필요합니다.
+- git push는 배포 성공이 아닙니다. 호스팅 빌드·Production ready·배포 커밋·실제 생성 결과를 각각 확인합니다.
+
+## 문제 구분
+
+| 증상 | 확인 / 대응 |
+| --- | --- |
+| FE에서 연결 불가 | 빌드된 BE 주소, Production ready, health, CORS 확인 |
+| 401 | anonymous 방문자 토큰 형식 또는 keys 등록 상태 확인 |
+| 자료가 사라짐 | Turso 변수 이름·권한·health storage 확인. Vercel 로컬 DB로 운영하지 않음 |
+| 분석·생성 504 | 실제 함수 한도·GPT 응답 시간·문서 크기 확인. 같은 응답을 무조건 반복하지 않음 |
+| `comfy_not_configured` | 얼굴 생성은 가능해도 장면에는 Comfy 키 필요 |
+| `character_library_unavailable` | 번들 manifest와 10종 원본이 배포에 포함됐는지 확인 |
+| `character_library_changed` | 해당 프로젝트의 원본 캐릭터 버전 복원. 새 배정으로 조용히 대체하지 않음 |
+| `character_reference_limit` | 자동 준비 인물 6명 / 장면 참조 3명 제한을 구분해 카드·자료 조정 |
+| `image_in_progress` | 진행 중 작업 조회. 새 작업 제출과 구분 |
+| `image_submission_unknown` | DB 작업과 Comfy 목록 대조. 중복 생성 금지 |
+| 그림 URL 깨짐 | 저장된 src 도메인·PUBLIC_BASE_URL·기존 주소 유지 여부 확인 |
+| PDF 413 | 원본 4,500,000바이트 이하 또는 텍스트 입력. 직접 객체 저장소 업로드 API는 없음 |

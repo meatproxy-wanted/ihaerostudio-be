@@ -190,7 +190,7 @@ def test_easy_read_guideline_is_bundled():
     assert prompt.endswith("작업: 테스트 작업")
 
 
-def test_every_openai_call_carries_the_guideline_before_the_task(client, monkeypatch):
+def test_text_only_openai_calls_carry_the_guideline_before_the_task(client, monkeypatch):
     from app.providers import GUIDELINES
     project = create(client)
     document = draft(client, project)

@@ -20,7 +20,7 @@ test = ["pytest>=8,<10"]
 include = ["app*"]
 
 [tool.setuptools.package-data]
-app = ["prompts/*.md"]
+app = ["prompts/*.md", "assets/*.png", "assets/characters-v1/*.png", "assets/characters-v1/*.json", "assets/characters-v1/*.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

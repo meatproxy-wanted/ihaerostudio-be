@@ -1,4 +1,4 @@
-"""Ground character descriptions in pixels and reject visibly inconsistent candidates."""
+"""Describe reference pixels; retain older identity-inspection helpers for compatibility."""
 import hashlib
 import json
 from typing import Literal
