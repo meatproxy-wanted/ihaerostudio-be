@@ -7,6 +7,7 @@ https://docs.comfy.org/tutorials/image/qwen/qwen-image-2512
 """
 from .video_models import WorkflowNode
 from .video_workflows import validate_graph
+from .studio_style import mood_instruction
 
 ALLOWED = {"UNETLoader", "CLIPLoader", "VAELoader", "CLIPTextEncode", "FluxGuidance", "BasicGuider",
            "EmptyFlux2LatentImage", "RandomNoise", "KSamplerSelect", "Flux2Scheduler",
@@ -15,6 +16,8 @@ STYLE_VERSION = "simple-animation-illustration-v3"
 RESOLUTION_VERSION = "512px-v2"
 PRESET = "flux2-dev-animation-512-action-scene-v7"
 REFERENCE_PRESET = "qwen-image-edit-2511-animation-512-40steps-action-scene-v8"
+MOOD_PRESET = "qwen-image-edit-2511-light-mood-512-40steps-scene-v1"
+MOOD_PORTRAIT_PRESET = "qwen-image-edit-2511-light-mood-512-40steps-portrait-v1"
 PORTRAIT_PRESET = "qwen-image-2512-animation-solo-portrait-512-20steps-v8"
 PORTRAIT_SIZE = 512
 ILLUSTRATION_STYLE = "Simple animation-style image or illustration. "
@@ -45,6 +48,7 @@ VISIBLE_FACES = (
 REFERENCE_ALLOWED = {"UNETLoader", "CLIPLoader", "VAELoader", "LoadImage", "FluxKontextImageScale", "ImageScaleBy",
                      "TextEncodeQwenImageEditPlus", "ModelSamplingAuraFlow", "CFGNorm", "VAEEncode",
                      "KSampler", "VAEDecode", "SaveImage"}
+MOOD_ALLOWED = REFERENCE_ALLOWED | {"EmptySD3LatentImage"}
 WIDTH = HEIGHT = 512
 STEPS = 20
 REFERENCE_STEPS = 40
@@ -100,16 +104,18 @@ def compile_image(illustration, seed, prefix):
     return graph
 
 
-def compile_reference_image(illustration, seed, prefix, references, *, steps=REFERENCE_STEPS):
-    """Qwen-Image-Edit-2511 with one to three uploaded character images.
+def compile_reference_image(illustration, seed, prefix, references, *, steps=REFERENCE_STEPS, mood=None, portrait=False):
+    """Qwen Edit with at most three uploaded character/mood images.
 
     Each reference is an uploaded Cloud filename, in the same order as imageNumber in
     the scene-planning context. Both positive and negative edit encoders receive
     the same image slots and VAE. No Lightning LoRA or automatic fallback.
     Based on Comfy-Org's image_qwen_image_edit_2511.json normal model path.
     """
-    if not 1 <= len(references) <= 3:
-        raise ValueError("Expected one to three character references")
+    if (not references and not mood) or len(references) + bool(mood) > 3:
+        raise ValueError("Expected one to three total references")
+    if portrait and (references or not mood):
+        raise ValueError("New portraits use only a mood sample, never other character references")
     if steps not in {20, 40}:
         raise ValueError("Reference comparison supports only 20 or 40 steps")
     def node(kind, **inputs):
@@ -130,6 +136,12 @@ def compile_reference_image(illustration, seed, prefix, references, *, steps=REF
               "face shape, hairstyle, facial hair (including every beard or moustache), skin tone, clothing, "
               "shoes and body proportions. Do not remove facial hair, make an adult younger, change outfits, "
               "swap faces, or replace anyone with a generic new character. Preserve identity while changing pose and scene." + VISIBLE_FACES)
+    if not references:
+        prompt = ILLUSTRATION_STYLE + "Create the requested fictional adult educational illustration. " + illustration.prompt + VISIBLE_FACES
+    if mood:
+        prompt += mood_instruction(len(references) + 1)
+    if portrait:
+        prompt += PORTRAIT_COMPOSITION
     graph = {
         "1": node("UNETLoader", unet_name="qwen_image_edit_2511_fp8mixed.safetensors", weight_dtype="default"),
         "2": node("CLIPLoader", clip_name="qwen_2.5_vl_7b_fp8_scaled.safetensors", type="qwen_image", device="default"),
@@ -138,7 +150,7 @@ def compile_reference_image(illustration, seed, prefix, references, *, steps=REF
         "8": node("CFGNorm", model=["7", 0], strength=1.0),
     }
     images = {}
-    for index, filename in enumerate(references):
+    for index, filename in enumerate([*references, *([mood] if mood else [])]):
         load, scale = str(20 + index * 2), str(21 + index * 2)
         graph[load] = node("LoadImage", image=filename)
         graph[scale] = node("FluxKontextImageScale", image=[load, 0])
@@ -154,5 +166,13 @@ def compile_reference_image(illustration, seed, prefix, references, *, steps=REF
         "12": node("VAEDecode", samples=["11", 0], vae=["3", 0]),
         "13": node("SaveImage", images=["12", 0], filename_prefix=prefix),
     })
-    validate_graph(graph, REFERENCE_ALLOWED)
+    if not references:
+        # The mood sample must not become the base composition (it has two
+        # people and scenery). Generate from a blank square latent instead.
+        graph["6"] = node("EmptySD3LatentImage", width=WIDTH, height=HEIGHT, batch_size=1)
+    if portrait:
+        graph["5"].inputs["prompt"] = (
+            "two people, multiple people, crowd, duplicate person, reflections, inset portrait, split panels, "
+            "collage, scenery, furniture, props, icons, colored background, text, numbers, logos, watermark, hidden face, cropped head")
+    validate_graph(graph, MOOD_ALLOWED if mood else REFERENCE_ALLOWED)
     return graph

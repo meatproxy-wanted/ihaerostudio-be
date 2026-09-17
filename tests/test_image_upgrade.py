@@ -119,16 +119,19 @@ def test_scene_upgrade_finds_unknown_text_job_with_unrelated_project_portraits(s
 def test_reference_comparison_changes_only_steps():
     plan = IllustrationPlan(prompt="Image 1 listens to image 2 in a neutral space.", alt="대화", meaning="상황")
     low = compile_reference_image(plan, 42, "comparison", ["first.png", "second.png"], steps=20)
+    medium = compile_reference_image(plan, 42, "comparison", ["first.png", "second.png"], steps=40)
     high = compile_reference_image(plan, 42, "comparison", ["first.png", "second.png"])
-    assert low["11"].inputs["steps"] == 20 and high["11"].inputs["steps"] == 40
+    assert low["11"].inputs["steps"] == 20
+    assert medium["11"].inputs["steps"] == 40 and high["11"].inputs["steps"] == 40
     low["11"].inputs["steps"] = 40
-    assert low == high
+    assert low == medium == high
     with pytest.raises(ValueError):
         compile_reference_image(plan, 42, "comparison", ["first.png"], steps=100)
 
 
 @pytest.mark.parametrize("status", ["prepared", "running", "submission_unknown", "ready"])
-def test_40step_upgrade_preserves_accepted_20step_jobs_and_seed(setup, monkeypatch, status):
+@pytest.mark.parametrize("old_steps", [20])
+def test_40step_upgrade_preserves_accepted_jobs_and_seed(setup, monkeypatch, status, old_steps):
     _, service, project, _, card, control = setup
     attach_characters(setup)
     monkeypatch.setattr("app.studio_generation.WAIT_SECONDS", 0)
@@ -136,11 +139,12 @@ def test_40step_upgrade_preserves_accepted_20step_jobs_and_seed(setup, monkeypat
     control["submit_error"] = 429 if status == "prepared" else "timeout" if status == "submission_unknown" else None
     assert request_image(setup).status_code == (200 if status == "ready" else 503)
     context = image_context(service.store.get(project["id"], "alice")[0], card["id"])
-    old_digest = fingerprint(context, "qwen-image-edit-2511-animation-512-action-scene-v7")
+    old_preset = "qwen-image-edit-2511-animation-512-action-scene-v7" if old_steps == 20 else "qwen-image-edit-2511-animation-512-40steps-action-scene-v8"
+    old_digest = fingerprint(context, old_preset)
     with service.store.store.connect() as db:
         job = json.loads(db.execute("SELECT body FROM studio_image_jobs").fetchone()["body"])
         job["fingerprint"] = old_digest
-        job["workflow"]["11"]["inputs"]["steps"] = 20
+        job["workflow"]["11"]["inputs"]["steps"] = old_steps
         original_id, original_seed = job["id"], job["seed"]
         original_workflow = copy.deepcopy(job["workflow"])
         db.execute("UPDATE studio_image_jobs SET fingerprint=?,body=?,lease_until=0 WHERE id=?",
@@ -156,7 +160,7 @@ def test_40step_upgrade_preserves_accepted_20step_jobs_and_seed(setup, monkeypat
     with service.store.store.connect() as db:
         jobs = [json.loads(r["body"]) for r in db.execute("SELECT body FROM studio_image_jobs").fetchall()]
     current = next(j for j in jobs if j["fingerprint"] == fingerprint(context))
-    assert current["workflow"]["11"]["inputs"]["steps"] == (40 if status in {"prepared", "ready"} else 20)
+    assert current["workflow"]["11"]["inputs"]["steps"] == (40 if status in {"prepared", "ready"} else old_steps)
     assert (current["id"] != original_id) == (status == "ready")
     if status == "prepared":
         assert current["seed"] == original_seed

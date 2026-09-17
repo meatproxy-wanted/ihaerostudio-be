@@ -55,6 +55,8 @@ class PromptProvider:
 
 @pytest.fixture
 def setup(client, monkeypatch):
+    # Legacy-path regression tests; mood integration is enabled explicitly below.
+    monkeypatch.setattr("app.studio_generation.style_sample", lambda: None)
     project = create(client, {"tone": "haeyo", "naming": "initial", "illustrations": "with"})
     document = draft(client, project)
     card = document["sections"][0]["cards"][0]
