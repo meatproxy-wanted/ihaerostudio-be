@@ -15,6 +15,15 @@ REFERENCE_PRESET = "qwen-image-edit-2511-identity-v1"
 PORTRAIT_PRESET = "flux-schnell-illustration-v2"
 PORTRAIT_ALLOWED = {"UNETLoader", "DualCLIPLoader", "VAELoader", "CLIPTextEncodeFlux", "ConditioningZeroOut",
                     "EmptySD3LatentImage", "KSampler", "VAEDecode", "SaveImage"}
+PORTRAIT_COMPOSITION = (
+    " Mandatory character portrait composition: exactly one fictional adult, alone and centered in a waist-up portrait. "
+    "Use a solid pure white (#FFFFFF), empty background. "
+    "No other people, background figures, duplicate people, reflections, inset portraits, split panels or collages. "
+    "No scenery, furniture, props, icons or background decorations. "
+    "Face the viewer directly or in a three-quarter front view at eye level. "
+    "Show the entire head and a large, clear face with visible eyes, nose and mouth. "
+    "Keep the person distinct from the plain white background. These portrait constraints override conflicting scene descriptions."
+)
 VISIBLE_FACES = (
     " If people are depicted, show each person's clearly visible face from the front or a three-quarter front view. "
     "Keep eyes, nose and mouth visible and unobstructed, with the whole head inside the frame. "
@@ -36,7 +45,8 @@ def compile_portrait(illustration, seed, prefix):
     def node(kind, **inputs):
         return WorkflowNode(class_type=kind, inputs=inputs)
     prompt = ("Respectful adult educational illustration, simple flat shapes, calm colors, white background. "
-              "Anonymous adults, no real likeness, no letters, numbers, logos or speech text. " + illustration.prompt + VISIBLE_FACES)
+              "One anonymous adult, no real likeness, no letters, numbers, logos or speech text. " +
+              illustration.prompt + VISIBLE_FACES + PORTRAIT_COMPOSITION)
     graph = {
         "1": node("UNETLoader", unet_name="flux1-schnell.safetensors", weight_dtype="default"),
         "2": node("DualCLIPLoader", clip_name1="clip_l.safetensors", clip_name2="t5xxl_fp16.safetensors", type="flux", device="default"),

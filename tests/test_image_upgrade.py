@@ -48,6 +48,19 @@ def test_initial_portrait_retains_original_model_and_cache_key():
     assert fingerprint(context) == fingerprint(context, "flux-schnell-illustration-v2")
 
 
+def test_portrait_enforces_one_person_and_empty_white_background_in_both_encoders():
+    plan = IllustrationPlan(prompt="An adult at a busy office with background figures.", alt="인물", meaning="등장인물")
+    graph = compile_portrait(plan, 42, "test")
+    inputs = graph["4"].inputs
+    assert inputs["clip_l"] == inputs["t5xxl"]
+    prompt = inputs["t5xxl"]
+    assert "exactly one fictional adult, alone and centered" in prompt
+    assert "solid pure white (#FFFFFF), empty background" in prompt
+    assert "No other people, background figures" in prompt
+    assert "No scenery, furniture, props, icons or background decorations" in prompt
+    assert prompt.endswith("These portrait constraints override conflicting scene descriptions.")
+
+
 @pytest.mark.parametrize("count", [1, 3])
 def test_qwen_edit_only_connects_supplied_image_slots(count):
     plan = IllustrationPlan(prompt="Edit image 1 into the requested scene.", alt="장면", meaning="설명")

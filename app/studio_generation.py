@@ -181,8 +181,9 @@ class StudioGeneration:
                     "카드에 해당하지 않는 인물을 억지로 추가하거나 원문에 없는 관계를 만들지 마세요. "
                     "익명 인물은 가상의 얼굴을 뜻하며 얼굴을 숨기거나 생략하라는 뜻이 아닙니다. "
                     "사람이 나오면 정면 또는 앞쪽 3/4 구도로 눈·코·입이 보이게 하고 뒷모습·얼굴 가림·얼굴 잘림은 피하세요. "
-                    "role=person이면 partyId의 인물 한 명을 눈높이에서 본 상반신 초상으로 그리세요. "
-                    "머리 전체와 얼굴이 크게 보이게 하고 복잡한 배경보다 얼굴·헤어스타일·의상을 식별하기 쉽게 표현하세요. "
+                    "role=person이면 partyId의 인물 정확히 한 명만 중앙에 배치한 눈높이 상반신 초상으로 그리세요. "
+                    "배경은 아무것도 없는 순수한 흰색(#FFFFFF)입니다. 다른 사람·배경 인물·복제·반사된 인물·콜라주·분할 화면은 금지합니다. "
+                    "장소·가구·사물·아이콘·배경 장식을 넣지 마세요. 머리 전체와 얼굴이 크게 보이게 하고 얼굴·헤어스타일·의상을 식별하기 쉽게 표현하세요. "
                     "role이 person이 아니면 인물 소개보다 해당 카드의 상황을 중심으로 장면을 설계하세요. "
                     "누가 어디서 무엇을 하는지, 인물 간 거리·시선·손동작, 관련 사물의 위치와 상태를 영어로 구체적으로 묘사하세요. "
                     "상황을 이해하는 데 필요한 디테일만 넣고 원문에 없는 사건·감정·장소·물건을 사실처럼 추가하지 마세요. "
@@ -220,7 +221,8 @@ class StudioGeneration:
                         " Mandatory character portrait framing: exactly one fictional adult in a waist-up portrait, "
                         "facing the viewer directly or in a three-quarter front view at eye level. "
                         "Make the face large and clear, with visible eyes, nose and mouth, the entire head in frame, "
-                        "and a simple background. Do not show the person's back or hide the face."})
+                        "on an empty solid pure white (#FFFFFF) background. No other people, background figures, "
+                        "duplicates, reflections, collages, scenery, props or icons. Do not show the person's back or hide the face."})
                 if context["role"] != "person":
                     plan = plan.model_copy(update={"prompt": plan.prompt +
                         " Situation-first composition: emphasize the specific event or situation, not a lineup of portraits. "
