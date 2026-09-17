@@ -11,9 +11,26 @@ from .video_workflows import validate_graph
 ALLOWED = {"UNETLoader", "CLIPLoader", "VAELoader", "CLIPTextEncode", "FluxGuidance", "BasicGuider",
            "EmptyFlux2LatentImage", "RandomNoise", "KSamplerSelect", "Flux2Scheduler",
            "SamplerCustomAdvanced", "VAEDecode", "SaveImage"}
-PRESET = "flux2-dev-illustration-v1"
-REFERENCE_PRESET = "qwen-image-edit-2511-identity-v1"
-PORTRAIT_PRESET = "qwen-image-2512-solo-portrait-20steps-v2"
+STYLE_VERSION = "strict-flat-2d-v1"
+PRESET = "flux2-dev-flat-2d-illustration-v2"
+REFERENCE_PRESET = "qwen-image-edit-2511-flat-2d-identity-v2"
+PORTRAIT_PRESET = "qwen-image-2512-flat-2d-solo-portrait-20steps-v3"
+FLAT_STYLE = (
+    " Mandatory visual style: strictly flat 2D hand-drawn educational illustration. "
+    "Use clean drawn outlines, simple planar shapes and uniform solid color fills. "
+    "Render people and objects as flat drawings, never as volumetric or rendered characters. "
+    "No 3D or 2.5D appearance, CGI, clay, plastic, toy-like or sculpted surfaces. "
+    "No realistic textures, gradients, shading that models volume, cast shadows, ambient occlusion, "
+    "glossy reflections, cinematic lighting, depth of field, bevels, embossing or isometric dioramas. "
+    "Preserve character identity and scene meaning using outlines and flat color shapes. "
+    "This flat 2D requirement overrides conflicting style descriptions and any 3D or 2.5D style in reference images."
+)
+FLAT_NEGATIVE = (
+    "3D, 2.5D, three-dimensional, CGI, 3D render, photorealistic, photograph, clay render, "
+    "plastic skin, toy-like character, sculpted, volumetric, realistic textures, gradients, "
+    "volume shading, cast shadows, ambient occlusion, glossy reflections, cinematic lighting, "
+    "depth of field, bevel, embossing, isometric diorama"
+)
 PORTRAIT_ALLOWED = {"UNETLoader", "CLIPLoader", "VAELoader", "CLIPTextEncode", "ModelSamplingAuraFlow",
                     "EmptySD3LatentImage", "KSampler", "VAEDecode", "SaveImage"}
 PORTRAIT_COMPOSITION = (
@@ -46,10 +63,10 @@ def compile_portrait(illustration, seed, prefix):
         return WorkflowNode(class_type=kind, inputs=inputs)
     prompt = ("Respectful adult educational illustration, simple flat shapes, calm colors, white background. "
               "One anonymous adult, no real likeness, no letters, numbers, logos or speech text. " +
-              illustration.prompt + PORTRAIT_COMPOSITION)
+              illustration.prompt + FLAT_STYLE + PORTRAIT_COMPOSITION)
     negative = ("two people, multiple people, crowd, background people, duplicate person, reflections, "
                 "inset portrait, split panels, collage, scenery, furniture, props, icons, background decorations, "
-                "colored background, text, numbers, logos, watermark, hidden face, cropped head")
+                "colored background, text, numbers, logos, watermark, hidden face, cropped head, " + FLAT_NEGATIVE)
     graph = {
         "1": node("UNETLoader", unet_name="qwen_image_2512_fp8_e4m3fn.safetensors", weight_dtype="default"),
         "2": node("CLIPLoader", clip_name="qwen_2.5_vl_7b_fp8_scaled.safetensors", type="qwen_image", device="default"),
@@ -70,7 +87,7 @@ def compile_image(illustration, seed, prefix):
     def node(kind, **inputs):
         return WorkflowNode(class_type=kind, inputs=inputs)
     prompt = ("Respectful adult educational illustration, simple flat shapes, calm colors, white background. "
-              "Anonymous adults, no real likeness, no letters, numbers, logos or speech text. " + illustration.prompt + VISIBLE_FACES)
+              "Anonymous adults, no real likeness, no letters, numbers, logos or speech text. " + illustration.prompt + VISIBLE_FACES + FLAT_STYLE)
     graph = {
         "1": node("UNETLoader", unet_name="flux2_dev_fp8mixed.safetensors", weight_dtype="default"),
         "2": node("CLIPLoader", clip_name="mistral_3_small_flux2_bf16.safetensors", type="flux2", device="default"),
@@ -105,7 +122,8 @@ def compile_reference_image(illustration, seed, prefix, references):
     pictures = ", ".join(f"Picture {i + 1}" for i in range(len(references)))
     prompt = ("Edit the supplied character images into one respectful educational scene with a white background. "
               "Keep the exact illustrated people from " + pictures + ". "
-              "Preserve their faces, hair, clothing, colors and drawing style. Change only poses and the scene. "
+              "Preserve their faces, hair, clothing and colors. Express their identity in strictly flat 2D drawn style. "
+              "Change poses and the scene without copying any dimensional rendering style. "
               "Image numbers in the instruction refer to the matching Picture numbers. "
               "Only include characters relevant to the described scene. "
               "Show their distinct roles and the direction of their relationship without swapping identities. "
@@ -114,7 +132,7 @@ def compile_reference_image(illustration, seed, prefix, references):
               "re-use the exact illustrated adults from the reference images. Preserve each person's apparent age, "
               "face shape, hairstyle, facial hair (including every beard or moustache), skin tone, clothing, "
               "shoes and body proportions. Do not remove facial hair, make an adult younger, change outfits, "
-              "swap faces, or replace anyone with a generic new character. Change only their pose and scene." + VISIBLE_FACES)
+              "swap faces, or replace anyone with a generic new character. Preserve identity while changing pose and scene." + VISIBLE_FACES + FLAT_STYLE)
     graph = {
         "1": node("UNETLoader", unet_name="qwen_image_edit_2511_fp8mixed.safetensors", weight_dtype="default"),
         "2": node("CLIPLoader", clip_name="qwen_2.5_vl_7b_fp8_scaled.safetensors", type="qwen_image", device="default"),
@@ -130,7 +148,7 @@ def compile_reference_image(illustration, seed, prefix, references):
         images[f"image{index + 1}"] = [scale, 0]
     graph.update({
         "4": node("TextEncodeQwenImageEditPlus", clip=["2", 0], vae=["3", 0], prompt=prompt, **images),
-        "5": node("TextEncodeQwenImageEditPlus", clip=["2", 0], vae=["3", 0], prompt="", **images),
+        "5": node("TextEncodeQwenImageEditPlus", clip=["2", 0], vae=["3", 0], prompt=FLAT_NEGATIVE, **images),
         "6": node("VAEEncode", pixels=images["image1"], vae=["3", 0]),
         "11": node("KSampler", model=["8", 0], positive=["4", 0], negative=["5", 0], latent_image=["6", 0],
                    seed=seed, steps=20, cfg=4.0, sampler_name="euler", scheduler="simple", denoise=1.0),

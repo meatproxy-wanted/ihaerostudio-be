@@ -49,7 +49,8 @@ def test_initial_portrait_uses_qwen_and_new_cache_key():
     assert graph["10"].inputs == {"model": ["1", 0], "shift": 3.1}
     assert graph["7"].inputs["seed"] == 42
     context = {"role": "person", "characterReferences": []}
-    assert PORTRAIT_PRESET == "qwen-image-2512-solo-portrait-20steps-v2"
+    assert PORTRAIT_PRESET == "qwen-image-2512-flat-2d-solo-portrait-20steps-v3"
+    assert fingerprint(context) != fingerprint(context, "qwen-image-2512-solo-portrait-20steps-v2")
     assert fingerprint(context) != fingerprint(context, "qwen-image-2512-solo-portrait-v1")
     assert fingerprint(context) != fingerprint(context, "flux-schnell-illustration-v2")
 
@@ -81,6 +82,25 @@ def test_all_image_paths_require_visible_faces_not_audience_facing():
         assert "Face the viewer directly" not in prompt
         assert "angle both people" not in prompt
         assert "three-quarter front view" not in prompt
+
+
+def test_all_image_paths_enforce_flat_2d_even_with_conflicting_scene_style():
+    plan = IllustrationPlan(prompt="A glossy 3D clay-rendered adult in a cinematic 2.5D scene.", alt="인물", meaning="설명")
+    graphs = [compile_portrait(plan, 1, "test"), compile_image(plan, 1, "test"),
+              compile_reference_image(plan, 1, "test", ["person.png"])]
+    for graph in graphs:
+        prompt = graph["4"].inputs.get("text", graph["4"].inputs.get("prompt"))
+        assert prompt.index("Mandatory visual style") > prompt.index(plan.prompt)
+        assert "strictly flat 2D hand-drawn" in prompt
+        assert "uniform solid color fills" in prompt
+        assert "No 3D or 2.5D appearance" in prompt
+        assert "overrides conflicting style descriptions" in prompt
+        assert "ambient occlusion" in prompt and "gradients" in prompt
+    for graph in (graphs[0], graphs[2]):
+        negative = graph["5"].inputs.get("text", graph["5"].inputs.get("prompt"))
+        assert "3D, 2.5D" in negative
+        assert "clay render" in negative and "volume shading" in negative
+    assert "Preserve their faces, hair, clothing, colors and drawing style" not in graphs[2]["4"].inputs["prompt"]
 
 
 @pytest.mark.parametrize("count", [1, 3])
@@ -246,3 +266,47 @@ def test_qwen_portrait_upgrade_preserves_paid_jobs_not_ready_cache(setup, monkey
     assert current["workflow"]["1"]["inputs"]["unet_name"] == (
         "qwen_image_2512_fp8_e4m3fn.safetensors" if status in {"ready", "prepared"} else old_model)
     assert current["workflow"]["7"]["inputs"]["steps"] == (20 if status in {"ready", "prepared"} else old_steps)
+
+
+@pytest.mark.parametrize("kind,old_preset", [
+    ("portrait", "qwen-image-2512-solo-portrait-20steps-v2"),
+    ("text", "flux2-dev-illustration-v1"),
+    ("reference", "qwen-image-edit-2511-identity-v1")])
+@pytest.mark.parametrize("status", ["running", "submission_unknown", "ready", "prepared"])
+def test_flat_style_upgrade_preserves_paid_jobs_rebuilds_unsubmitted_only(setup, monkeypatch, kind, old_preset, status):
+    client, service, project, _, card, control = setup
+    if kind != "text":
+        portraits = attach_characters(setup)
+        if kind == "portrait":
+            card = portraits[0]
+    monkeypatch.setattr("app.studio_generation.WAIT_SECONDS", 0)
+    control["status"] = "running" if status == "running" else "succeeded"
+    control["submit_error"] = "timeout" if status == "submission_unknown" else 429 if status == "prepared" else None
+    def request():
+        return client.post(f"/api/studio/projects/{project['id']}/assist/images", json={"cardId": card["id"]})
+    assert request().status_code == (200 if status == "ready" else 503)
+    state = service.store.get(project["id"], "alice")[0]
+    context = image_context(state, card["id"])
+    old_digest = fingerprint(image_context(state, card["id"], select_relevant=False), old_preset)
+    with service.store.store.connect() as db:
+        job = json.loads(db.execute("SELECT body FROM studio_image_jobs").fetchone()["body"])
+        original_id = job["id"]
+        job["fingerprint"] = old_digest
+        job.pop("style_revision", None)
+        key = "prompt" if kind == "reference" else "text"
+        job["workflow"]["4"]["inputs"][key] = "Legacy dimensional style"
+        db.execute("UPDATE studio_image_jobs SET fingerprint=?,body=?,lease_until=0 WHERE id=?",
+                   (old_digest, json.dumps(job), original_id))
+    control["status"], control["submit_error"] = "succeeded", None
+    response = request()
+    if status == "submission_unknown":
+        assert response.json()["detail"]["code"] == "image_submission_unknown"
+    else:
+        assert response.status_code == 200, response.text
+    assert len(submissions(control)) == (2 if status in {"ready", "prepared"} else 1)
+    with service.store.store.connect() as db:
+        jobs = [json.loads(r["body"]) for r in db.execute("SELECT body FROM studio_image_jobs").fetchall()]
+    current = next(j for j in jobs if j["fingerprint"] == fingerprint(context))
+    assert (current["id"] != original_id) == (status == "ready")
+    prompt = current["workflow"]["4"]["inputs"][key]
+    assert ("strictly flat 2D" in prompt) == (status in {"ready", "prepared"})

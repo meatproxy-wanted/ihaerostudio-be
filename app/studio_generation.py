@@ -11,7 +11,7 @@ from pydantic import Field
 
 from .comfy import ComfyCloud, ComfyFailure, ORIGIN
 from .image_workflows import (ALLOWED, PRESET, PORTRAIT_ALLOWED, PORTRAIT_PRESET, REFERENCE_ALLOWED,
-                              REFERENCE_PRESET, compile_image, compile_portrait, compile_reference_image)
+                              REFERENCE_PRESET, STYLE_VERSION, compile_image, compile_portrait, compile_reference_image)
 from .models import uid
 from .sources import clean_image
 from .store import fail
@@ -132,11 +132,11 @@ class StudioGeneration:
         pixels = [reference_bytes(self.store, state, owner, ref) for ref in references]
         legacy_context = image_context(state, card_id, select_relevant=False)
         if context["role"] == "person":
-            legacy_presets = ["qwen-image-2512-solo-portrait-v1", "flux-schnell-illustration-v2", "flux2-dev-illustration-v1"]
+            legacy_presets = ["qwen-image-2512-solo-portrait-20steps-v2", "qwen-image-2512-solo-portrait-v1", "flux-schnell-illustration-v2", "flux2-dev-illustration-v1"]
         elif legacy_context["characterReferences"]:
-            legacy_presets = ["flux2-dev-identity-reference-v1", "flux2-klein-9b-verified-identity-v3"]
+            legacy_presets = ["qwen-image-edit-2511-identity-v1", "flux2-dev-identity-reference-v1", "flux2-klein-9b-verified-identity-v3"]
         else:
-            legacy_presets = ["flux-schnell-illustration-v2"]
+            legacy_presets = ["flux2-dev-illustration-v1", "flux-schnell-illustration-v2"]
         legacy_digests = [fingerprint(legacy_context, p) for p in legacy_presets]
         if legacy_context != context:
             legacy_digests.append(fingerprint(legacy_context))
@@ -147,10 +147,11 @@ class StudioGeneration:
                 fail(409, "image_card_changed", "카드 내용이 바뀌었어요. 현재 카드에서 다시 그림 후보를 확인해 주세요.")
             return self.result(state, job["asset_id"])
         try:
-            # Only unsubmitted portrait graphs are rebuilt for the 20-step preset.
+            # Rebuild only unsubmitted graphs for current style/portrait steps.
             # Accepted or uncertain paid jobs retain their original workflow.
-            if context["role"] == "person" and job["status"] == "prepared" and job["workflow"].get("7", {}).get("inputs", {}).get("steps") != 20:
-                job.update(status="planned", reference_uploads=[])
+            if job["status"] == "prepared" and (job.get("style_revision") != STYLE_VERSION or (
+                context["role"] == "person" and job["workflow"].get("7", {}).get("inputs", {}).get("steps") != 20)):
+                job.update(status="planned")
                 self.persist(job)
             if job["status"] == "portrait_rejected":
                 fail(422, "portrait_composition_invalid", "등장인물 그림이 한 명·빈 흰 배경 조건을 통과하지 못했어요. 적용하지 않았으며 같은 요청으로 유료 재생성을 하지 않습니다.")
@@ -286,7 +287,8 @@ class StudioGeneration:
                 check = self.cloud.preflight(graph, allowed=allowed, preset=preset, uploaded_images=filenames)
                 if not check.compatible:
                     fail(503, "comfy_workflow_unavailable", "Comfy에서 그림 생성 모델을 사용할 수 없어요. 서버 워크플로 설정을 확인해 주세요.")
-                job.update(status="prepared", prepared_at=time.time(), workflow={k: n.model_dump() for k, n in graph.items()})
+                job.update(status="prepared", prepared_at=time.time(), style_revision=STYLE_VERSION,
+                           workflow={k: n.model_dump() for k, n in graph.items()})
                 self.persist(job)
             if job["status"] == "prepared":
                 latest = self.store.get(project_id, owner)[0]
