@@ -11,7 +11,7 @@ SCENE_VERSION = VISUAL_VERSION
 
 
 class SceneCharacter(Wire):
-    partyId: Id | None = Field(description="Exact input partyId for a case party; null only for a source-supported generic figure such as a judge.")
+    partyId: Id | None = Field(description="Prefer an existing input partyId. Null only for a figure explicitly present in the source and indispensable to the visible scene.")
     role: str = Field(min_length=1, max_length=60, description="Short English role for a visibly necessary figure, not appearance or a reason to include a party.")
     expression: str = Field(min_length=1, max_length=80, description="Short observable expression, preferably 1-4 English words. Neutral unless supported.")
     position: str = Field(min_length=1, max_length=100, description="Short visible position within this cut, preferably 1-6 English words.")
@@ -58,7 +58,7 @@ def bound_scene_schema(base, context):
     if not ids:
         return base
     actor = create_model("BoundSceneCharacter", __base__=SceneCharacter,
-        partyId=(Literal[ids] | None, Field(description="Choose the exact matching input partyId; null only for a necessary source-supported generic figure, never to bypass a reference.")))
+        partyId=(Literal[ids] | None, Field(description="Prefer an exact input partyId. Null only for an explicitly source-present, indispensable figure, never to bypass a reference. Prefer an object-only scene over adding people.")))
     return create_model(base.__name__, __base__=base,
         characters=(list[actor], Field(max_length=6, description="Only physically present/visually necessary figures. A shop owner is not automatically present in the shop.")))
 
@@ -113,7 +113,9 @@ situation: 한 컷에 보이는 장소·행동·배치만, 가능하면 25단어
 objects: 실제로 보여야 할 사물·익숙한 아이콘과 보이는 상태·위치만 지정하세요. 각 상태·위치는 가능하면 10단어 이내입니다.
 행동은 가능하면 12단어 이내로 구체적으로 적으세요. '물건을 가져간 사실'은 물건을 선반에서 집는 모습처럼 표현하며 가게 근처에 서 있는 모습으로 대체하지 마세요.
 현장에 필요한 인물만 포함하세요. 가게 소유자·피해자·당사자라는 이유만으로 현장에 출연시키지 마세요. 무인점포 범행에 소유자의 현장 존재 근거가 없으면 소유자는 제외합니다.
-일반 인물(예: 판사)은 근거 있고 실제 장면에 필요할 때만 partyId=null로 지정하세요. 입력 당사자를 null로 바꾸어 레퍼런스를 우회하지 마세요.
+기본은 기존 등장인물만 사용합니다. 주변 행인·구경꾼·직원·판사 등 새 인물을 분위기나 역할 설명을 위해 추가하지 마세요.
+기존 등장인물과 오브젝트만으로 설명할 수 있으면 새 인물을 넣지 마세요. 새 인물은 원문에 현장 존재가 명확하고 장면 설명에 꼭 필요한 경우에만 partyId=null로 지정하세요.
+법원 결정이라는 이유만으로 판사를 추가하지 말고 가능한 경우 관련 오브젝트로 설명하세요. 입력 당사자를 null로 바꾸어 레퍼런스를 우회하지 마세요.
 징역·집행유예·보호관찰은 막연히 문서 옆에 선 인물을 반복하지 말고, 각각 설명을 돕는 구체적인 시각 요소를 선택하세요.
 숫자·기간·금액은 설명 글이 전달합니다. '글자 없는 2년 달력/6개월 표시'처럼 읽을 수 없는 수치를 이미지에 표현하라고 하지 마세요.
 명령을 이행하거나 복역을 완료한 것처럼 그리지 마세요. 형 선고와 집행유예를 함께 읽고 현재 수감 여부를 발명하지 마세요. 이 구분은 장면 선택에 적용하며 이미지용 필드에는 법적 해설을 복사하지 마세요.

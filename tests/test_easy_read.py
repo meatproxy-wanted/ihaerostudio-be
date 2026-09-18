@@ -10,7 +10,7 @@ from app.easy_read import TEXT_RULES, VISUAL_COMPOSITION, VISUAL_TASK_RULES, VIS
 from app.providers import strict_schema, system_prompt
 from app.providers import Provider
 from app.config import Config
-from app.image_workflows import REFERENCE_APPEARANCE, compile_reference_image, wrap_picture_references
+from app.image_workflows import REFERENCE_APPEARANCE, SCENE_PEOPLE, compile_image, compile_reference_image, wrap_picture_references
 from app.studio_domain import review_items
 from app.studio_scene import SCENE_TASK, SceneIllustrationPlan, SceneCompositionPlan, bound_scene_schema
 from app.studio_storyboard import TASK, StoryboardPlan, Panel, compile_storyboard, StoryboardCompositionPlan, storyboard_schema
@@ -141,6 +141,7 @@ def test_single_reference_compiler_wraps_common_and_scene_tokens_and_keeps_setti
     prompt = graph["4"].inputs["prompt"]
     assert "Edit <Picture 1>, <Picture 2> into" in prompt
     assert prompt.count(REFERENCE_APPEARANCE) == 1
+    assert prompt.count(SCENE_PEOPLE) == 1
     assert "<Picture 2> (expression:" in prompt
     assert scene.mainMessage not in prompt and scene.semanticBoundary not in prompt
     assert "Court-order consideration" not in prompt
@@ -167,6 +168,19 @@ def test_storyboard_structured_sections_are_scoped_per_cut_and_share_reference_m
     assert prompt.count("Characters (expressions):") == prompt.count("Situation:") == prompt.count("Objects:") == 2
     assert prompt.count("Use the reference images for character appearance.") == 1
     assert prompt.count(REFERENCE_APPEARANCE) == 1
+    assert prompt.count(SCENE_PEOPLE) == 1
+
+
+def test_new_people_are_exceptional_in_both_planners_and_no_reference_scene_paths():
+    for task in (SCENE_TASK, TASK):
+        assert "기본은 기존 등장인물만" in task
+        assert "원문에 현장 존재가 명확하고 장면 설명에 꼭 필요한 경우에만" in task
+        assert "법원 결정이라는 이유만으로 판사를 추가하지" in task
+    scene = SimpleNamespace(prompt="Characters (expressions): No people. Situation: A document lies on a desk. Objects: document and desk.")
+    text_graph = compile_image(scene, 1, "test")
+    mood_graph = compile_reference_image(scene, 1, "test", [], mood="mood.png")
+    assert text_graph["4"].inputs["text"].count(SCENE_PEOPLE) == 1
+    assert mood_graph["4"].inputs["prompt"].count(SCENE_PEOPLE) == 1
 
 
 def test_private_plan_fields_are_required_in_new_openai_schema_but_legacy_plans_load():

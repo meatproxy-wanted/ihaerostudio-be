@@ -28,6 +28,7 @@ REFERENCE_APPEARANCE = (
     "Use the reference images for character appearance. "
     "Preserve each character's clothing colors from their corresponding reference image in every scene. "
 )
+SCENE_PEOPLE = "Depict only the characters listed for each scene, without additional people or background figures. "
 PLANNING_STYLE_INSTRUCTION = (
     "그림체 요구는 'Simple animation-style image or illustration.'입니다. "
     "이미지용 항목에는 보이는 행동·배경·사물만 작성하세요. 인물 외형을 텍스트로 묘사하지 마세요. "
@@ -92,7 +93,7 @@ def compile_image(illustration, seed, prefix):
     def node(kind, **inputs):
         return WorkflowNode(class_type=kind, inputs=inputs)
     prompt = (ILLUSTRATION_STYLE + "Respectful adult educational scene. "
-              "Anonymous adults, no real likeness, no letters, numbers, logos or speech text. " + illustration.prompt + VISIBLE_FACES + VISUAL_COMPOSITION)
+              "Anonymous adults, no real likeness, no letters, numbers, logos or speech text. " + illustration.prompt + VISIBLE_FACES + SCENE_PEOPLE + VISUAL_COMPOSITION)
     prompt = wrap_picture_references(prompt)
     graph = {
         "1": node("UNETLoader", unet_name="flux2_dev_fp8mixed.safetensors", weight_dtype="default"),
@@ -136,9 +137,9 @@ def compile_reference_image(illustration, seed, prefix, references, *, steps=REF
               "Only include the people required by the scene; do not copy portrait backgrounds or layout. "
               "No text, numbers, labels or speech bubbles. " + VISIBLE_FACES + illustration.prompt)
     if not portrait:
-        prompt += VISUAL_COMPOSITION
+        prompt += SCENE_PEOPLE + VISUAL_COMPOSITION
     if not references:
-        prompt = ILLUSTRATION_STYLE + "Create the requested fictional adult educational illustration. " + illustration.prompt + VISIBLE_FACES + (VISUAL_COMPOSITION if not portrait else "")
+        prompt = ILLUSTRATION_STYLE + "Create the requested fictional adult educational illustration. " + illustration.prompt + VISIBLE_FACES + (SCENE_PEOPLE + VISUAL_COMPOSITION if not portrait else "")
     if mood:
         prompt += mood_instruction(len(references) + 1)
     if portrait:

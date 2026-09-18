@@ -10,7 +10,7 @@ from pydantic import Field, create_model
 
 from .comfy import ComfyFailure
 from .image_workflows import (ILLUSTRATION_STYLE, MOOD_ALLOWED, VISIBLE_FACES, REFERENCE_STEPS, REFERENCE_APPEARANCE,
-                              compile_reference_image, wrap_picture_references)
+                              compile_reference_image, wrap_picture_references, SCENE_PEOPLE)
 from .models import uid
 from .store import fail
 from .studio_characters import reference_bytes
@@ -103,7 +103,7 @@ def compile_storyboard(plan, roles, seed, prefix, references, profiles, *, chara
               REFERENCE_APPEARANCE +
               "Picture numbers below identify the corresponding input images; change only poses and situations. "
               "Keep each scene inside its quadrant, away from the center seams. "
-              "No text, numbers, labels or speech bubbles. " + VISIBLE_FACES + VISUAL_COMPOSITION)
+              "No text, numbers, labels or speech bubbles. " + VISIBLE_FACES + SCENE_PEOPLE + VISUAL_COMPOSITION)
     for index, position in enumerate(POSITIONS):
         if index >= len(plan.panels):
             prompt += f"\n{position} quadrant: leave entirely blank white; no scene, people or objects."
