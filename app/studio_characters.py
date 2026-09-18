@@ -91,11 +91,11 @@ def reference_bytes(store, state, owner, reference):
                 or asset.get("libraryCharacterId") != reference["libraryCharacterId"]
                 or asset.get("libraryDigest") != reference.get("libraryDigest")
                 or reference.get("libraryDigest") != library.get("digest")
-                or library.get("digest") != catalog()["digest"]):
+                or library.get("digest") != catalog(library.get("version"))["digest"]):
             fail(422, "character_reference_invalid", "고정 캐릭터 원본과 배정 정보가 맞지 않아요.")
         # Display uses a face crop, but Qwen/identity analysis receives the full
         # neutral figure, never a four-pose sheet or a face-only reference.
-        return reference_pixels(reference["libraryCharacterId"])
+        return reference_pixels(reference["libraryCharacterId"], library.get("version"))
     # Compatibility with old local SQLite projects. Never fetch a document-supplied URL.
     if asset["src"].startswith("data:"):
         try:

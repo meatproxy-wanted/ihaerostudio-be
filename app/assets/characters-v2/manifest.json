@@ -1,0 +1,123 @@
+{
+  "version": "stock-characters-v2",
+  "poseOrder": [
+    "listen",
+    "request",
+    "refuse",
+    "inspect"
+  ],
+  "background": "white",
+  "characters": [
+    {
+      "id": "cast-01",
+      "file": "cast-01.png",
+      "description": "An adult man with short side-parted dark hair, teal overshirt, cream shirt and navy trousers.",
+      "faceBox": [
+        0.1,
+        0.075,
+        0.88,
+        0.48
+      ]
+    },
+    {
+      "id": "cast-02",
+      "file": "cast-02.png",
+      "description": "An adult woman with a dark shoulder-length bob, mustard cardigan, cream top and charcoal trousers.",
+      "faceBox": [
+        0.1,
+        0.075,
+        0.88,
+        0.48
+      ]
+    },
+    {
+      "id": "cast-03",
+      "file": "cast-03.png",
+      "description": "An older adult man with short silver hair, rectangular glasses, burgundy pullover and slate trousers.",
+      "faceBox": [
+        0.1,
+        0.075,
+        0.88,
+        0.48
+      ]
+    },
+    {
+      "id": "cast-04",
+      "file": "cast-04.png",
+      "description": "An adult woman with dark hair in a high bun, lavender blouse and olive trousers.",
+      "faceBox": [
+        0.1,
+        0.075,
+        0.88,
+        0.48
+      ]
+    },
+    {
+      "id": "cast-05",
+      "file": "cast-05.png",
+      "description": "An adult man with short wavy brown hair, rust-orange crewneck and dark brown trousers.",
+      "faceBox": [
+        0.1,
+        0.075,
+        0.88,
+        0.48
+      ]
+    },
+    {
+      "id": "cast-06",
+      "file": "cast-06.png",
+      "description": "An older adult woman with a silver bob, small round glasses, sage cardigan and navy trousers.",
+      "faceBox": [
+        0.1,
+        0.075,
+        0.88,
+        0.48
+      ]
+    },
+    {
+      "id": "cast-07",
+      "file": "cast-07.png",
+      "description": "An adult woman with black hair in a low ponytail, cobalt-blue shirt and beige trousers.",
+      "faceBox": [
+        0.1,
+        0.075,
+        0.88,
+        0.48
+      ]
+    },
+    {
+      "id": "cast-08",
+      "file": "cast-08.png",
+      "description": "An adult man with very short dark hair, plum polo shirt and charcoal trousers.",
+      "faceBox": [
+        0.1,
+        0.075,
+        0.88,
+        0.48
+      ]
+    },
+    {
+      "id": "cast-09",
+      "file": "cast-09.png",
+      "description": "An adult woman with a short chestnut pixie haircut, coral sweater and navy trousers.",
+      "faceBox": [
+        0.1,
+        0.075,
+        0.88,
+        0.48
+      ]
+    },
+    {
+      "id": "cast-10",
+      "file": "cast-10.png",
+      "description": "An adult man with medium-length wavy black hair, light denim-blue jacket, cream shirt and dark green trousers.",
+      "faceBox": [
+        0.1,
+        0.075,
+        0.88,
+        0.48
+      ]
+    }
+  ]
+}
+

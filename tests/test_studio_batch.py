@@ -53,17 +53,16 @@ def test_editor_preparation_generates_portraits_first_then_reference_scenes(setu
     assert preparation(setup).json()["document"] == result["document"]
     assert len(submissions(control)) == len(graphs)
     person_plans = [p for p in service.provider.plans if p["role"] == "person"]
-    assert person_plans[0]["existingCharacterAppearances"] == []
-    assert [p["partyId"] for p in person_plans[1]["existingCharacterAppearances"]] == [portraits[0]["partyId"]]
-    assert service.provider.profile_calls == 2  # Contrast analysis is reused by the scene path.
+    assert all("existingCharacterAppearances" not in p and "identityProfiles" not in p for p in person_plans)
+    assert service.provider.profile_calls == 0
     assert all("existingCharacterAppearances" not in p for p in service.provider.plans if p["role"] != "person")
-    # Later portraits do not change a completed portrait's fingerprint/contrast set.
+    # Later portraits do not change a completed portrait's fingerprint.
     service.candidates(project["id"], "alice", portraits[0]["id"])
     assert len(submissions(control)) == len(graphs)
     with service.store.store.connect() as db:
         jobs = [json.loads(r["body"]) for r in db.execute("SELECT body FROM studio_image_jobs").fetchall()]
     first = next(j for j in jobs if j["card_id"] == portraits[0]["id"])
-    assert first["portrait_contrast_references"] == first["portrait_contrasts"] == []
+    assert "portrait_contrast_references" not in first and "portrait_contrasts" not in first
 
 
 def test_pending_batch_and_page_reload_resume_one_submission(setup, monkeypatch):

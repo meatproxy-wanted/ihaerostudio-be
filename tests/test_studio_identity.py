@@ -48,16 +48,18 @@ def test_allows_matching_scene_and_no_unrequired_people():
 
 
 
-def test_prompt_repeats_fixed_english_features_and_explicit_absence_of_beard():
+@pytest.mark.parametrize("facial_hair,description", [
+    ("none", "Clean-shaven. No beard, moustache or stubble."),
+    ("beard", "A short beard."),
+])
+def test_prompt_uses_only_reference_images_for_appearance(facial_hair, description):
     from app.studio_identity import identity_instructions
-    profile = {**PROFILE, "face": "oval face", "facialHairDescription": "none",
+    profile = {**PROFILE, "face": "oval face", "facialHair": facial_hair, "facialHairDescription": description,
                "accessories": "no accessories", "style": "flat vector"}
     text = identity_instructions([profile])
-    assert "Reference image 1:" in text
-    assert "Clean-shaven. No beard, moustache or stubble." in text
-    assert "gray shirt" in text and "black sneakers" in text
-    assert "Only pose, expression and setting may change" in text
-    assert "partyId" not in text
+    assert text == "Use the reference images for character appearance."
+    assert "oval face" not in text and "gray shirt" not in text
+    assert profile["facialHairDescription"] == description
 
 
 

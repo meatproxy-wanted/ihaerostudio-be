@@ -31,7 +31,7 @@ class SceneIllustrationPlan(Wire):
 
 SCENE_TASK = PLANNING_STYLE_INSTRUCTION + """\n카드 하나의 설명 삽화를 설계하세요.
 prompt는 영어 60단어 이내로, 인물별 참조 번호(Picture 1 등)·행동·배치·핵심 사물을 한 번씩만 적으세요.
-공통 화풍·인물 외형 목록·금지 규칙은 서버에서 붙이므로 prompt에 반복하지 마세요.
+공통 화풍·금지 규칙은 서버에서 붙이므로 prompt에 반복하지 마세요. 인물 외형 설명은 넣지 마세요.
 focalAction, staging, objectsAndSetting, semanticBoundary는 영어 설계 기록이며 이미지 모델에는 별도로 보내지 않습니다.
 alt와 meaning은 한국어 설계 초안이며 실제 결과를 검수했다는 표현은 쓰지 마세요.
 """ + VISUAL_TASK_RULES

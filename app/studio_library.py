@@ -12,14 +12,20 @@ from pydantic import Field
 from .store import fail
 from .studio_models import Wire
 
-ROOT = Path(__file__).parent / "assets" / "characters-v1"
+ROOT = Path(__file__).parent / "assets" / "characters-v2"
+DEFAULT_VERSION = "stock-characters-v2"
+ROOTS = {DEFAULT_VERSION: ROOT,
+         "stock-characters-v1": ROOT.parent / "characters-v1"}
 PORTRAIT_PRESET = "stock-character-face-768-v1"
 
 
-@lru_cache(maxsize=1)
-def catalog():
+@lru_cache(maxsize=3)
+def catalog(version=None):
     try:
-        data = json.loads((ROOT / "manifest.json").read_text())
+        root = ROOTS[version or DEFAULT_VERSION]
+        data = json.loads((root / "manifest.json").read_text())
+        if data["version"] != (version or DEFAULT_VERSION):
+            raise ValueError("Character library version mismatch")
         entries = data["characters"]
         if len(entries) != 10 or len({c["id"] for c in entries}) != 10:
             raise ValueError("Expected ten distinct characters")
@@ -27,7 +33,7 @@ def catalog():
         for entry in entries:
             if entry["file"] not in {entry["id"] + ".png", entry["id"] + "-clean-v1.png"} or entry["id"] not in {f"cast-{n:02d}" for n in range(1, 11)}:
                 raise ValueError("Invalid bundled filename")
-            digest.update((ROOT / entry["file"]).read_bytes())
+            digest.update((root / entry["file"]).read_bytes())
             left, top, right, bottom = entry["faceBox"]
             if not (0 <= left < right <= 1 and 0 <= top < bottom <= 1):
                 raise ValueError("Invalid face crop")
@@ -36,12 +42,13 @@ def catalog():
         fail(503, "character_library_unavailable", "고정 캐릭터셋을 읽을 수 없어요. 서버의 캐릭터 자산을 확인해 주세요.")
 
 
-@lru_cache(maxsize=10)
-def neutral_sprite(character_id):
-    entry = next((c for c in catalog()["characters"] if c["id"] == character_id), None)
+@lru_cache(maxsize=30)
+def neutral_sprite(character_id, version=None):
+    data = catalog(version)
+    entry = next((c for c in data["characters"] if c["id"] == character_id), None)
     if entry is None:
         raise ValueError("Unknown bundled character")
-    with Image.open(ROOT / entry["file"]) as source:
+    with Image.open(ROOTS[data["version"]] / entry["file"]) as source:
         # Never feed the four-pose sheet to Qwen: exactly one character per reference.
         image = source.crop((0, 0, source.width // 4, source.height)).convert("RGBA")
         bounds = image.getbbox()
@@ -50,17 +57,17 @@ def neutral_sprite(character_id):
         return image.crop(bounds)
 
 
-def reference_pixels(character_id):
-    image = neutral_sprite(character_id).copy()
+def reference_pixels(character_id, version=None):
+    image = neutral_sprite(character_id, version).copy()
     image.thumbnail((768 - 96, 768 - 64), Image.Resampling.LANCZOS)
     canvas = Image.new("RGBA", (768, 768), "white")
     canvas.alpha_composite(image, ((768 - image.width) // 2, 768 - image.height - 24))
     return png(canvas)
 
 
-def face_pixels(character_id):
-    entry = next(c for c in catalog()["characters"] if c["id"] == character_id)
-    image = neutral_sprite(character_id).copy()
+def face_pixels(character_id, version=None):
+    entry = next(c for c in catalog(version)["characters"] if c["id"] == character_id)
+    image = neutral_sprite(character_id, version).copy()
     # Reviewed normalized head region in the immutable neutral sprite.
     left, top, right, bottom = entry["faceBox"]
     image = image.crop((round(left * image.width), round(top * image.height),

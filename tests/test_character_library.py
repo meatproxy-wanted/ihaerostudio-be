@@ -39,12 +39,13 @@ def enable_library(setup):
     service.config.comfy_api_key = ""
 
 
-def test_library_has_ten_independent_face_and_reference_assets():
-    data = catalog()
+@pytest.mark.parametrize("version", ["stock-characters-v1", "stock-characters-v2"])
+def test_library_has_ten_independent_face_and_reference_assets(version):
+    data = catalog(version)
     assert len(data["characters"]) == 10
     faces, refs = [], []
     for entry in data["characters"]:
-        face, ref = face_pixels(entry["id"]), reference_pixels(entry["id"])
+        face, ref = face_pixels(entry["id"], version), reference_pixels(entry["id"], version)
         assert face != ref
         for pixels in (face, ref):
             with Image.open(io.BytesIO(pixels)) as image:
@@ -63,6 +64,7 @@ def test_ai_selects_once_and_portraits_need_no_comfy_or_vision(setup):
         response = preparation(setup)
         assert response.status_code == 200, response.text
     state = service.store.get(project["id"], "alice")[0]
+    assert state["character_library"]["version"] == "stock-characters-v2"
     bindings = state["character_library"]["bindings"]
     assert [bindings[p["partyId"]] for p in portraits] == ["cast-10", "cast-09"]
     assert service.provider.selection_calls == 1
@@ -74,6 +76,35 @@ def test_ai_selects_once_and_portraits_need_no_comfy_or_vision(setup):
         locked = state["locked_portraits"][portrait["partyId"]]["image"]
         asset = next(a for a in state["assets"] if a["src"] == locked["src"])
         assert service.store.asset(asset["id"])[1] == face_pixels(bindings[portrait["partyId"]])
+
+
+def test_existing_v1_library_keeps_original_faces_references_and_assignments(setup):
+    _, service, project, _, _, _ = setup
+    portraits, _ = portrait_targets(setup)
+    enable_library(setup)
+    legacy = catalog("stock-characters-v1")
+    bindings = {p["partyId"]: f"cast-{index + 1:02d}" for index, p in enumerate(portraits)}
+    original = {"version": legacy["version"], "digest": legacy["digest"], "bindings": bindings}
+    state, revision = service.store.get(project["id"], "alice")
+    state["character_library"] = original
+    service.store.save(state, "alice", revision)
+    for _ in portraits:
+        response = preparation(setup)
+        assert response.status_code == 200, response.text
+    state = service.store.get(project["id"], "alice")[0]
+    assert state["character_library"] == original
+    assert service.library.assign(project["id"], "alice") == original
+    assert getattr(service.provider, "selection_calls", 0) == 0
+    for portrait in portraits:
+        locked = state["locked_portraits"][portrait["partyId"]]["image"]
+        asset = next(a for a in state["assets"] if a["src"] == locked["src"])
+        character_id = bindings[portrait["partyId"]]
+        assert service.store.asset(asset["id"])[1] == face_pixels(character_id, legacy["version"])
+        assert face_pixels(character_id, legacy["version"]) != face_pixels(character_id)
+    scene = next(c for c in cards(state["document"]) if c["role"] != "person")
+    for ref in image_context(state, scene["id"])["characterReferences"]:
+        assert reference_bytes(service.store, state, "alice", ref) == reference_pixels(
+            ref["libraryCharacterId"], legacy["version"])
 
 
 def test_qwen_receives_full_neutral_references_not_faces_or_pose_sheets(setup):

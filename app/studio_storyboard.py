@@ -16,7 +16,6 @@ from .store import fail
 from .studio_characters import reference_bytes
 from .studio_domain import cards, invalidate_review, summarize_document, timestamp
 from .studio_generation import IllustrationPlan, image_context
-from .studio_identity import CharacterIdentity, identity_instructions
 from .studio_models import Id, Wire
 from .studio_scene import SCENE_TASK, SceneIllustrationPlan
 from .studio_store import StudioStore, asset_size, asset_url
@@ -84,11 +83,10 @@ def compile_storyboard(plan, roles, seed, prefix, references, profiles):
         raise ValueError("Storyboard requires one to three character references")
     prompt = (ILLUSTRATION_STYLE +
               "Create one square 2-by-2 storyboard with four equal quadrants and a thin white central gutter. "
-              "Use the supplied reference characters, preserving their faces, hair, facial hair, clothing, colors and linework. "
+              "Use the reference images for character appearance. "
               "Picture numbers below identify the corresponding input images; change only poses and situations. "
               "Keep each scene inside its quadrant, away from the center seams. "
               "No text, numbers, labels or speech bubbles. " + VISIBLE_FACES + VISUAL_COMPOSITION)
-    prompt += identity_instructions(profiles)
     for index, position in enumerate(POSITIONS):
         if index >= len(plan.panels):
             prompt += f"\n{position} quadrant: leave entirely blank white; no scene, people or objects."
@@ -166,13 +164,7 @@ class StudioStoryboard:
                 job["status"] = "pending"
                 g.persist(job)
             if job["status"] == "pending":
-                profiles = job.setdefault("identity_profiles", [])
-                identity = CharacterIdentity(g.store, g.provider)
-                for index in range(len(profiles), len(references)):
-                    profiles.append(identity.describe(project_id, owner, references[index], pixels[index]))
-                    g.persist(job)
-                plan = g.provider.call(TASK, {**context, "identityProfiles": [
-                    {k: v for k, v in p.items() if k != "style"} for p in profiles]}, StoryboardPlan)
+                plan = g.provider.call(TASK, context, StoryboardPlan)
                 if [p.cardId for p in plan.panels] != group["cardIds"]:
                     fail(502, "storyboard_plan_invalid", "4컷 설계의 카드 순서가 달라서 생성을 요청하지 않았어요.")
                 job.update(status="planned", plan=plan.model_dump(), reference_uploads=[], seed=secrets.randbits(48),
@@ -199,7 +191,7 @@ class StudioStoryboard:
                     g.persist(job)
                 filenames = [u["filename"] for u in uploads]
                 graph = compile_storyboard(StoryboardPlan.model_validate(job["plan"]),
-                    [p["role"] for p in context["panels"]], job["seed"], "ihaero-" + job["id"], filenames, job["identity_profiles"])
+                    [p["role"] for p in context["panels"]], job["seed"], "ihaero-" + job["id"], filenames, [])
                 check = g.cloud.preflight(graph, allowed=MOOD_ALLOWED, preset=PRESET, uploaded_images=filenames)
                 if not check.compatible:
                     fail(503, "comfy_workflow_unavailable", "Comfy에서 고해상도 4컷 워크플로를 사용할 수 없어요.")

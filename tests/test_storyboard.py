@@ -181,6 +181,10 @@ def test_batch_groups_and_crops_atomically_without_contract_change(setup, count)
         prompt = graph["4"]["inputs"]["prompt"]
         assert "one educational scene" not in prompt and "Do not create" not in prompt
         assert "BOTTOM RIGHT quadrant" in prompt
+        assert prompt.count("Use the reference images for character appearance.") == 1
+        assert "Reference image 1: Face:" not in prompt and "Upper clothing:" not in prompt
+        assert "identityProfiles" not in service.provider.storyboard_context
+        assert service.provider.profile_calls == 0
         assert "image1" in graph["4"]["inputs"]
     repeated = preparation(setup).json()
     assert repeated["document"] == result["document"]

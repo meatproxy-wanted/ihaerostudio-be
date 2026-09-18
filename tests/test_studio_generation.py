@@ -16,6 +16,7 @@ from test_studio import client, create, draft, path
 class PromptProvider:
     name = "openai"
     calls = 0
+    profile_calls = 0
 
     def call(self, task, context, schema, *, images=()):
         if schema.__name__ == "PortraitComposition":
@@ -274,7 +275,7 @@ def test_saved_portraits_are_uploaded_and_condition_the_same_scene(setup):
     assert client.put(path(project) + "/document", json=latest).status_code == 200
     assert request_image(setup).status_code == 200
     assert len(submissions(control)) == 2
-    assert service.provider.profile_calls == 2  # Saved image profiles survive a scene edit.
+    assert service.provider.profile_calls == 0  # Reference pixels, never written appearance profiles.
 
 
 def test_replaced_portrait_during_generation_rejects_stale_scene(setup):
@@ -301,12 +302,10 @@ def test_portrait_generation_does_not_copy_other_characters(setup):
     assert response.status_code == 200, response.text
     assert service.provider.context["characterReferences"] == []
     assert [c["partyId"] for c in service.provider.context["characters"]] == [portraits[0]["partyId"]]
-    contrasts = service.provider.context["existingCharacterAppearances"]
-    assert [p["partyId"] for p in contrasts] == [portraits[1]["partyId"]]
-    assert contrasts[0]["hair"] == "short brown hair" and contrasts[0]["upperClothing"] == "gray shirt"
-    assert "imageNumber" not in contrasts[0]
-    assert "적어도 두 가지" in service.provider.task
-    assert service.provider.profile_calls == 1
+    assert "existingCharacterAppearances" not in service.provider.context
+    assert "identityProfiles" not in service.provider.context
+    assert "적어도 두 가지" not in service.provider.task
+    assert service.provider.profile_calls == 0
     assert not [r for r in control["calls"] if r.url.path == "/api/upload/image"]
     latest = client.get(path(project) + "/document").json()
     latest["images"].append({"id": "selected-new-portrait", **response.json()["candidates"][0], "source": "library"})
@@ -315,7 +314,7 @@ def test_portrait_generation_does_not_copy_other_characters(setup):
     assert client.post(path(project) + "/assist/images", json={"cardId": portraits[0]["id"]}).json() == response.json()
     assert len(submissions(control)) == 1
     assert service.provider.portrait_validation_calls == 1
-    assert service.provider.profile_calls == 1
+    assert service.provider.profile_calls == 0
 
 
 def test_reference_must_belong_to_the_same_project_and_owner(setup):
@@ -466,17 +465,18 @@ def test_previously_rejected_job_returns_existing_output_without_paid_retry(setu
     assert len(submissions(control)) == 1
 
 
-def test_multiple_people_reference_is_rejected_before_comfy_submission(setup):
+def test_reference_pixels_are_used_without_appearance_analysis(setup):
     _, service, _, _, _, control = setup
     attach_characters(setup)
     original = service.provider.call
-    def hidden_face(task, payload, schema, **kwargs):
-        result = original(task, payload, schema, **kwargs)
-        return result.model_copy(update={"personCount": 2}) if schema.__name__ == "CharacterAppearance" else result
-    service.provider.call = hidden_face
+    def no_appearance_analysis(task, payload, schema, **kwargs):
+        assert schema.__name__ != "CharacterAppearance"
+        return original(task, payload, schema, **kwargs)
+    service.provider.call = no_appearance_analysis
     response = request_image(setup)
-    assert response.status_code == 422 and response.json()["detail"]["code"] == "character_reference_unclear"
-    assert not submissions(control) and service.provider.calls == 0
+    assert response.status_code == 200
+    assert len(submissions(control)) == service.provider.calls == 1
+    assert service.provider.profile_calls == 0
 
 
 
@@ -510,14 +510,14 @@ def test_scene_staging_reaches_both_renderers_without_extra_ai_calls(setup, with
     assert service.provider.calls == 1 and len(submissions(control)) == 1
     if with_references:
         assert "do not copy portrait backgrounds or layout" in prompt
-        assert "Keep the reference faces, hair, facial hair, clothing, colors and illustration linework" in prompt
+        assert prompt.count("Use the reference images for character appearance.") == 1
         assert graph["11"]["inputs"]["steps"] == 50
     else:
         assert graph["6"]["inputs"]["width"] == graph["6"]["inputs"]["height"] == 768
         assert graph["9"]["inputs"]["steps"] == 20
 
 
-def test_reference_appearance_style_is_not_forwarded_as_a_style_instruction(setup):
+def test_reference_appearance_profiles_are_not_forwarded_to_generation(setup):
     _, service, _, _, _, control = setup
     attach_characters(setup)
     original = service.provider.call
@@ -530,9 +530,15 @@ def test_reference_appearance_style_is_not_forwarded_as_a_style_instruction(setu
 
     service.provider.call = photographic_style
     assert request_image(setup).status_code == 200
-    assert all("style" not in p for p in service.provider.context["identityProfiles"])
+    assert "identityProfiles" not in service.provider.context
+    assert service.provider.profile_calls == 0
     assert "Simple animation-style image or illustration." in service.provider.task
     prompt = json.loads(submissions(control)[0].content)["workflow"]["4"]["inputs"]["prompt"]
     assert "photorealistic" not in prompt and "skin pores" not in prompt
     assert "Illustration style:" not in prompt
-    assert "REFERENCE CHARACTERS" in prompt
+    assert "REFERENCE CHARACTERS" not in prompt
+    assert "Reference image 1: Face:" not in prompt
+    assert "Upper clothing:" not in prompt and "short brown hair" not in prompt
+    assert not any(word in prompt.lower() for word in
+                   ("facial hair", "clean-shaven", "beard", "moustache", "mustache", "stubble"))
+    assert "수염" not in service.provider.task

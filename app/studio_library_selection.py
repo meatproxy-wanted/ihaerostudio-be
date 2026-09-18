@@ -23,7 +23,7 @@ class LibrarySelection:
                 jobs = db.execute("SELECT body FROM studio_image_jobs WHERE project_id=? AND owner=?", (project_id, owner)).fetchall()
             if any(json.loads(row["body"])["card_id"] != "__character_library_selection__" and json.loads(row["body"])["status"] != "ready" for row in jobs):
                 return None
-        data = catalog()
+        data = catalog(existing["version"] if existing else None)
         if existing and existing["digest"] != data["digest"]:
             fail(409, "character_library_changed", "고정 캐릭터셋 버전이 바뀌었어요. 이 자료의 원본 캐릭터 자산을 복원해 주세요.")
         bindings = (existing or {}).get("bindings", {})

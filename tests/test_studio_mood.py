@@ -64,7 +64,7 @@ def test_mood_batch_generates_locked_portraits_before_scenes(setup, monkeypatch)
     assert all(g["11"]["inputs"]["steps"] == 50 for g in graphs)
     assert all(g["6"]["class_type"] == "EmptySD3LatentImage" for g in graphs[:2])
     assert service.provider.portrait_validation_calls == 2
-    assert service.provider.profile_calls == 2  # Never describe the mood sample as a person.
+    assert service.provider.profile_calls == 0  # Appearance comes only from reference pixels.
     state = service.store.get(project["id"], "alice")[0]
     assert set(state["locked_portraits"]) == {p["partyId"] for p in portraits}
     assert preparation(setup).json()["document"] == result["document"]
