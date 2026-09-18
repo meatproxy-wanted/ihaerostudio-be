@@ -31,7 +31,7 @@ def test_mood_is_uploaded_last_and_cached(setup, monkeypatch, with_characters):
     uploads = [r for r in control["calls"] if r.url.path == "/api/upload/image"]
     assert len(uploads) == count + 1
     assert sample_pixels() in uploads[-1].content
-    assert f"Picture {count + 1} is only a light reference" in graph["4"]["inputs"]["prompt"]
+    assert f"<Picture {count + 1}> is only a light reference" in graph["4"]["inputs"]["prompt"]
     assert "Existing character identity and the requested situation take priority" in graph["4"]["inputs"]["prompt"]
     assert graph["11"]["inputs"]["steps"] == 50
     if not count:

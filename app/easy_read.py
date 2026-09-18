@@ -6,7 +6,7 @@ for all (general/written standards). Legal meaning overrides simplification.
 import re
 
 VERSION = "easy-read-explanation-v1"
-VISUAL_VERSION = "structured-scene-v4"
+VISUAL_VERSION = "visible-scene-v5"
 
 TEXT_RULES = """\n# 이지리드 적용 우선 규칙
 목표는 예쁜 글이나 어린이용 이야기가 아니라 성인이 판결의 핵심 상황을 이해하는 것입니다.
@@ -37,11 +37,10 @@ VISUAL_TASK_RULES = """\n# 그림 설계
 핵심 뜻 하나를 mainMessage에, 근거가 있는 대상의 한국어 단어 최대 3개를 keyTerms에 쓰세요.
 한 컷에는 행동 또는 사물 상태 하나만 담고, 핵심 사물을 익숙한 아이콘으로 크게 보여주세요.
 설명에 인물이 필요 없으면 사물만 사용하세요. 의미와 금액은 이미지 밖의 글이 설명합니다.
-characterReferences.imageNumber를 Picture 번호로 연결하세요. 인물 외형은 레퍼런스 이미지를 참고하며 prompt에 외형 설명을 넣지 마세요.
+characterReferences의 당사자 ID와 레퍼런스 연결을 유지하세요. 인물 외형은 레퍼런스만 참고합니다.
 필요한 인물·사물만 사용하고 장소가 불명확하면 중립적인 공간을 쓰세요. 근거 없는 감정·관계·사건은 만들지 마세요.
-주장은 요청하거나 말하는 장면, 판단은 인정된 사실 또는 중립적인 검토 장면으로 표현하세요.
-지급 명령은 실제 지급 장면이 아닙니다. role=decision에서는 명령을 확인하고 물건을 주고받지 않습니다.
-주장/판단/명령, 부정과 완료 여부를 semanticBoundary에 기록하고 그 의미를 보존하는 장면을 prompt에 쓰세요.
+원문의 주장/사실/명령과 조건을 보존하여 눈에 보이는 장면을 선택하세요. 지급 명령을 실제 지급으로 그리지 마세요.
+법적 구분·부정·기간·횟수는 내부 semanticBoundary에 기록합니다. 이미지용 항목에는 그 설명이 아니라 보이는 행동·배치만 쓰세요.
 그림에 글자를 넣지 마세요. alt는 보이는 설계, meaning은 카드의 핵심 뜻을 짧게 설명하세요.
 """
 

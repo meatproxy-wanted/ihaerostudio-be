@@ -143,19 +143,19 @@ def sheet(size=1024):
 
 class StoryboardProvider(SelectingProvider):
     def call(self, task, context, schema, *, images=()):
-        if schema is StoryboardCompositionPlan:
+        if schema.__name__ == "StoryboardCompositionPlan":
             self.storyboard_calls = getattr(self, "storyboard_calls", 0) + 1
             self.storyboard_context = copy.deepcopy(context)
             panels = [CompositionPanel(cardId=c["cardId"], mainMessage="The supplied situation is a request or order, not a completed payment.",
                 keyTerms=[], characters=[{"partyId": r["partyId"], "role": "case party", "expression": "neutral",
                     "position": "left" if i == 0 else "right", "action": "considers the request with separate hands"}
                     for i, r in enumerate(c["characterReferences"])],
-                situation="Reference characters consider the supplied request without completing a payment.", objects=[],
+                situation="Reference characters stand apart in a plain room.", objects=[],
                 semanticBoundary="A request or order is not an established event or completed payment.",
                 alt="컷 " + str(i), meaning="문장의 의미를 설명하는 삽화") for i, c in enumerate(context["panels"])]
             if getattr(self, "bad_order", False):
                 panels[0].cardId = "invented-card"
-            return schema(panels=panels)
+            return schema(panels=[panel.model_dump() for panel in panels])
         return super().call(task, context, schema, images=images)
 
 
@@ -504,10 +504,11 @@ def test_decision_constraints_and_unused_quadrants(setup):
 
     def plan_decision(task, context, schema, *, images=()):
         plan = original(task, context, schema, images=images)
-        if schema is StoryboardPlan:
-            graph = compile_storyboard(plan, ["decision"], 1, "test", ["ref.png"], [])
+        if schema.__name__ == "StoryboardCompositionPlan":
+            graph = compile_storyboard(plan.stored_plan(), ["decision"], 1, "test", ["ref.png"], [],
+                                       character_references=context["characterReferences"])
             prompt = graph["4"].inputs["prompt"]
-            assert "Court-order consideration only" in prompt
+            assert "Court-order consideration only" not in prompt
             assert prompt.count("leave entirely blank white") == 3
             assert "3D" not in prompt and "2.5D" not in prompt
         return plan

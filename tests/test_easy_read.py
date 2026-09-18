@@ -1,5 +1,6 @@
 import copy
 import json
+from types import SimpleNamespace
 
 import pytest
 import httpx
@@ -9,9 +10,10 @@ from app.easy_read import TEXT_RULES, VISUAL_COMPOSITION, VISUAL_TASK_RULES, VIS
 from app.providers import strict_schema, system_prompt
 from app.providers import Provider
 from app.config import Config
+from app.image_workflows import compile_reference_image, wrap_picture_references
 from app.studio_domain import review_items
-from app.studio_scene import SCENE_TASK, SceneIllustrationPlan, SceneCompositionPlan
-from app.studio_storyboard import TASK, StoryboardPlan, Panel, compile_storyboard, StoryboardCompositionPlan
+from app.studio_scene import SCENE_TASK, SceneIllustrationPlan, SceneCompositionPlan, bound_scene_schema
+from app.studio_storyboard import TASK, StoryboardPlan, Panel, compile_storyboard, StoryboardCompositionPlan, storyboard_schema
 from test_review_rules import state_with, sentence
 from test_studio_generation import client, setup, submissions
 from test_studio_batch import preparation
@@ -29,7 +31,7 @@ def test_text_rule_priority_and_source_quotes_are_explicit():
 def test_concrete_icons_and_one_message_are_shared_by_both_scene_paths():
     for task in (SCENE_TASK, TASK):
         assert VISUAL_TASK_RULES in task
-        for rule in ("mainMessage", "keyTerms", "아이콘", "이미지 밖", "지급 명령은 실제 지급 장면이 아닙니다", "근거가 있는 대상"):
+        for rule in ("mainMessage", "keyTerms", "아이콘", "이미지 밖", "지급 명령을 실제 지급으로 그리지 마세요", "근거가 있는 대상"):
             assert rule in task
     assert "concrete pictograms" in VISUAL_COMPOSITION
     assert "include only supported objects" in VISUAL_COMPOSITION
@@ -49,7 +51,7 @@ def structured_plan():
                      "position": "left", "action": "looks at the court-order document"},
                     {"partyId": "party-a", "role": "requester", "expression": "attentive",
                      "position": "right", "action": "points toward the document without handing it over"}],
-        situation="Both parties consider a court order, not a completed payment.",
+        situation="Two people look at a large document between them.",
         objects=[{"name": "court-order document", "stateAndPosition": "centered between the people; no lettering"}],
         semanticBoundary=plan()["semanticBoundary"], alt=plan()["alt"], meaning=plan()["meaning"])
 
@@ -67,12 +69,15 @@ def test_three_sections_are_required_and_server_resolves_actual_reference_number
     stored = value.stored_plan()
     restored = SceneIllustrationPlan.model_validate(stored.model_dump())
     prompt = restored.rendered_prompt(refs)
-    assert "Person 1 = the person from Picture 2; position: left; expression: neutral" in prompt
-    assert "Person 2 = the person from Picture 1; position: right; expression: attentive" in prompt
+    assert "<Picture 2> (expression: neutral; position: left" in prompt
+    assert "<Picture 1> (expression: attentive; position: right" in prompt
+    assert "Person 1" not in prompt
     assert "Exactly 2 people." in prompt and prompt.count("Situation:") == prompt.count("Objects:") == 1
     assert "court-order document: centered between the people" in prompt
-    assert "Show every listed object clearly" in prompt
+    assert "Show every listed object clearly" not in prompt
     assert stored.prompt not in prompt and stored.semanticBoundary not in prompt
+    assert stored.mainMessage not in prompt
+    assert "Situation: Two people look at a large document between them." in prompt
 
 
 def test_repeated_party_is_canonicalized_without_rejection_or_paid_replan():
@@ -80,7 +85,7 @@ def test_repeated_party_is_canonicalized_without_rejection_or_paid_replan():
     payload["characters"].append(copy.deepcopy(payload["characters"][0]))
     refs = [{"partyId": "party-a", "imageNumber": 1}, {"partyId": "party-b", "imageNumber": 2}]
     prompt = SceneCompositionPlan(**payload).stored_plan().rendered_prompt(refs)
-    assert "Exactly 2 people." in prompt and prompt.count("the person from Picture 2;") == 1
+    assert "Exactly 2 people." in prompt and prompt.count("<Picture 2> (") == 1
 
 
 def test_empty_people_or_objects_are_explicit_and_never_invented():
@@ -90,6 +95,59 @@ def test_empty_people_or_objects_are_explicit_and_never_invented():
     assert "Characters (expressions): No people" in prompt
     assert "Objects: None required" in prompt
     assert "Situation:" in prompt
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("Picture 1 and Picture 2", "<Picture 1> and <Picture 2>"),
+    ("<Picture 1> and Picture 10", "<Picture 1> and <Picture 10>"),
+    ("<Picture 12>", "<Picture 12>"),
+])
+def test_reference_tokens_are_wrapped_exactly_once(text, expected):
+    assert wrap_picture_references(text) == expected
+    assert wrap_picture_references(expected) == expected
+
+
+@pytest.mark.parametrize("storyboard", [False, True])
+def test_llm_identity_choices_are_bound_to_real_inputs_without_changing_wire_shape(storyboard):
+    refs = [{"partyId": "party-a", "imageNumber": 1}, {"partyId": "party-b", "imageNumber": 2}]
+    context = {"characterReferences": refs}
+    schema = storyboard_schema(context) if storyboard else bound_scene_schema(SceneCompositionPlan, context)
+    payload = structured_plan()
+
+    def load(value):
+        return schema.model_validate({"panels": [{"cardId": "card-1", **value}]} if storyboard else value)
+
+    value = load(payload)
+    panel = value.panels[0] if storyboard else value
+    assert set(panel.model_dump()) == set(payload) | ({"cardId"} if storyboard else set())
+    definition = strict_schema(schema)["$defs"]["BoundSceneCharacter"]
+    assert definition["properties"]["partyId"]["anyOf"] == [
+        {"enum": ["party-a", "party-b"], "type": "string"}, {"type": "null"}]
+    assert set(definition["required"]) == set(payload["characters"][0])
+    invalid = copy.deepcopy(payload)
+    invalid["characters"][0]["partyId"] = "invented-party"
+    with pytest.raises(ValidationError):
+        load(invalid)
+    generic = copy.deepcopy(payload)
+    generic["characters"] = [{**generic["characters"][0], "partyId": None, "role": "judge"}]
+    load(generic)  # source support is an LLM instruction, not an image-output gate
+    load({**payload, "characters": [], "objects": []})
+
+
+def test_single_reference_compiler_wraps_common_and_scene_tokens_and_keeps_settings():
+    scene = SceneCompositionPlan(**structured_plan()).stored_plan()
+    refs = [{"partyId": "party-a", "imageNumber": 1}, {"partyId": "party-b", "imageNumber": 2}]
+    graph = compile_reference_image(SimpleNamespace(prompt=scene.rendered_prompt(refs)), 42, "test", ["a.png", "b.png"])
+    prompt = graph["4"].inputs["prompt"]
+    assert "Edit <Picture 1>, <Picture 2> into" in prompt
+    assert "<Picture 2> (expression:" in prompt
+    assert scene.mainMessage not in prompt and scene.semanticBoundary not in prompt
+    assert "Court-order consideration" not in prompt
+    assert graph["11"].inputs["steps"] == 50
+    assert graph["4"].inputs["image1"] == ["30", 0]
+    assert graph["4"].inputs["image2"] == ["31", 0]
+    assert graph["20"].inputs["image"] == "a.png"
+    assert graph["22"].inputs["image"] == "b.png"
 
 
 def test_storyboard_structured_sections_are_scoped_per_cut_and_share_reference_mapping():
@@ -103,8 +161,8 @@ def test_storyboard_structured_sections_are_scoped_per_cut_and_share_reference_m
     graph = compile_storyboard(stored, ["claim", "finding"], 1, "test", ["a.png", "b.png"], [], character_references=refs)
     prompt = graph["4"].inputs["prompt"]
     left, right = prompt.split("TOP RIGHT quadrant ONLY:")
-    assert "Picture 2; position: left" in left and "Picture 1; position: right" in left
-    assert "Exactly 1 person" in right and "the person from Picture 2;" not in right
+    assert "<Picture 2> (expression: neutral; position: left" in left and "<Picture 1> (expression: attentive; position: right" in left
+    assert "Exactly 1 person" in right and "<Picture 2> (" not in right
     assert prompt.count("Characters (expressions):") == prompt.count("Situation:") == prompt.count("Objects:") == 2
     assert prompt.count("Use the reference images for character appearance.") == 1
 
@@ -131,7 +189,7 @@ def test_storyboard_sends_each_scene_once_and_common_rules_once():
     assert prompt.count(VISUAL_COMPOSITION) == 1
     assert prompt.count("Simple animation-style image or illustration.") == 1
     for panel in value.panels:
-        assert prompt.count(panel.prompt) == 1
+        assert prompt.count(wrap_picture_references(panel.prompt)) == 1
         assert panel.mainMessage not in prompt
         assert panel.focalAction not in prompt
         assert panel.semanticBoundary not in prompt

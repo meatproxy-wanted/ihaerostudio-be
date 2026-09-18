@@ -49,7 +49,7 @@ class PromptProvider:
                 characters=[{"partyId": r["partyId"], "role": "case party", "expression": "neutral",
                              "position": "left" if i == 0 else "right", "action": "considers the request with separate hands"}
                             for i, r in enumerate(refs)],
-                situation="A request is discussed, not a completed payment.", objects=[],
+                situation="Two people stand apart in a plain room.", objects=[],
                 semanticBoundary="A request is not an established event or a completed payment.",
                 alt="두 사람이 떨어져 요청 내용을 살펴보는 모습", meaning="요청과 완료를 구분한 설명")
         if schema.__name__ == "SceneIllustrationPlan":
@@ -426,7 +426,7 @@ def test_new_combo_catalog_and_uploaded_hash_preflight(setup):
     assert not cloud.preflight(graph, allowed={"LoadImage", "Choice"}, uploaded_images=[content_hash]).compatible
 
 
-def test_decision_workflow_keeps_order_separate_from_completed_payment(setup):
+def test_decision_workflow_does_not_append_unrelated_exchange_bans(setup):
     client, _, project, document, card, control = setup
     document["sections"][0]["cards"].remove(card)
     card["role"] = "decision"
@@ -435,8 +435,8 @@ def test_decision_workflow_keeps_order_separate_from_completed_payment(setup):
     assert request_image(setup).status_code == 200
     graph = json.loads(submissions(control)[0].content)["workflow"]
     prompt = graph["4"]["inputs"]["text"]
-    assert "Court-order consideration only, not performance of the order" in prompt
-    assert "Hands apart; no giving, receiving or exchange of objects" in prompt
+    assert "Court-order consideration only" not in prompt
+    assert "Hands apart; no giving, receiving or exchange" not in prompt
 
 
 def test_generated_candidate_is_returned_without_identity_check(setup):
@@ -506,14 +506,14 @@ def test_scene_staging_reaches_both_renderers_without_extra_ai_calls(setup, with
     graph = json.loads(submissions(control)[0].content)["workflow"]
     prompt = graph["4"]["inputs"]["prompt" if with_references else "text"]
     assert "Characters (expressions):" in prompt
-    assert "Situation: A request is discussed" in prompt
+    assert "Situation: Two people stand apart" in prompt
     assert "Objects: None required" in prompt
     assert "Main visible action:" not in prompt
     assert "Scene blocking:" not in prompt
     assert "Meaning to preserve:" not in prompt
     assert prompt.count("One clear action or object state per scene") == 1
     assert "세 필드는 생략할 수 없습니다" in service.provider.task
-    assert "주장은 요청하거나 말하는 장면" in service.provider.task
+    assert "이미지용 항목에는 그 설명이 아니라 보이는 행동·배치만" in service.provider.task
     assert "role=person" not in service.provider.task
     assert service.provider.context["sentences"][0]["evidence"]
     assert service.provider.calls == 1 and len(submissions(control)) == 1
@@ -521,8 +521,8 @@ def test_scene_staging_reaches_both_renderers_without_extra_ai_calls(setup, with
     assert service.provider.calls == 1 and len(submissions(control)) == 1
     if with_references:
         assert "do not copy portrait backgrounds or layout" in prompt
-        assert "Person 1 = the person from Picture 1; position: left" in prompt
-        assert "Person 2 = the person from Picture 2; position: right" in prompt
+        assert "<Picture 1> (expression: neutral; position: left" in prompt
+        assert "<Picture 2> (expression: neutral; position: right" in prompt
         assert prompt.count("Use the reference images for character appearance.") == 1
         assert graph["11"]["inputs"]["steps"] == 50
     else:

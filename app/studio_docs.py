@@ -441,7 +441,10 @@ for name in ("prepare_images", "image_candidates"):
     OPS[name]["description"] += (
         "\n\n### 컷별 필수 설계 항목\n\n"
         "새 GPT 설계는 인물·표정·위치·행동(characters), 상황(situation), 오브젝트·상태·위치(objects)를 "
-        "모든 컷에 필수로 분류합니다. 서버가 인물 partyId를 실제 Picture 레퍼런스 번호에 연결하고 "
+        "모든 컷에 필수로 분류합니다. 세 항목에는 눈에 보이는 행동·배치·사물 상태만 짧은 영어로 담습니다. "
+        "법적 해설·횟수·기간은 내부 mainMessage/semanticBoundary에만 남기며 이미지 입력에 이어 붙이지 않습니다. "
+        "새 LLM 설계의 partyId 선택은 입력 ID와 null로 제한합니다. 소유자·피해자라는 이유만으로 현장 인물을 추가하지 않습니다. "
+        "서버가 인물 partyId를 실제 <Picture 1>, <Picture 2> 레퍼런스에 연결하고 별도 Person 번호는 만들지 않습니다. "
         "인물 수와 인물별 위치·표정·행동, 상황, 모든 지정 오브젝트를 영어 프롬프트에 포함합니다. "
         "같은 partyId의 반복 항목은 프롬프트에서 한 인물로 정리합니다. "
         "인물 또는 사물이 필요 없으면 빈 배열로 명시하며 없는 요소를 발명하지 않습니다. "

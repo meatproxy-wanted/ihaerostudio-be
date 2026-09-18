@@ -6,18 +6,18 @@ import secrets
 import time
 
 from PIL import Image
-from pydantic import Field
+from pydantic import Field, create_model
 
 from .comfy import ComfyFailure
 from .image_workflows import (ILLUSTRATION_STYLE, MOOD_ALLOWED, VISIBLE_FACES, REFERENCE_STEPS,
-                              compile_reference_image)
+                              compile_reference_image, wrap_picture_references)
 from .models import uid
 from .store import fail
 from .studio_characters import reference_bytes
 from .studio_domain import cards, invalidate_review, summarize_document, timestamp
 from .studio_generation import IllustrationPlan, image_context
 from .studio_models import Id, Wire
-from .studio_scene import SCENE_TASK, SceneIllustrationPlan, SceneCompositionPlan
+from .studio_scene import SCENE_TASK, SceneIllustrationPlan, SceneCompositionPlan, bound_scene_schema
 from .studio_store import StudioStore, asset_size, asset_url
 from .video_models import WorkflowNode
 from .easy_read import VISUAL_VERSION as VERSION, VISUAL_COMPOSITION
@@ -48,6 +48,12 @@ class StoryboardCompositionPlan(Wire):
 
     def stored_plan(self):
         return StoryboardPlan(panels=[Panel(cardId=p.cardId, **p.stored_plan().model_dump()) for p in self.panels])
+
+
+def storyboard_schema(context):
+    panel = bound_scene_schema(CompositionPanel, context)
+    return create_model("StoryboardCompositionPlan", __base__=StoryboardCompositionPlan,
+                        panels=(list[panel], Field(min_length=1, max_length=4)))
 
 
 TASK = SCENE_TASK + """\n# 4컷 출력
@@ -104,13 +110,10 @@ def compile_storyboard(plan, roles, seed, prefix, references, profiles, *, chara
             continue
         panel = plan.panels[index]
         prompt += f"\n{position} quadrant ONLY: {panel.rendered_prompt(character_references)}"
-        if roles[index] == "decision":
-            prompt += (" Court-order consideration only, not performance of the order. Hands apart; "
-                       "no giving, receiving or exchange of money, envelopes, papers, keys or any object.")
     graph = compile_reference_image(IllustrationPlan(prompt="Temporary compiler input", alt="4컷", meaning="4컷"),
                                     seed, prefix, references)
     # Replace, do not append to the single-scene/contact-sheet prohibition.
-    graph["4"].inputs["prompt"] = prompt
+    graph["4"].inputs["prompt"] = wrap_picture_references(prompt)
     graph["6"] = WorkflowNode(class_type="EmptySD3LatentImage",
                               inputs={"width": SHEET_SIZE, "height": SHEET_SIZE, "batch_size": 1})
     return graph
@@ -175,7 +178,7 @@ class StudioStoryboard:
                 job["status"] = "pending"
                 g.persist(job)
             if job["status"] == "pending":
-                plan = g.provider.call(TASK, context, StoryboardCompositionPlan).stored_plan()
+                plan = g.provider.call(TASK, context, storyboard_schema(context)).stored_plan()
                 if [p.cardId for p in plan.panels] != group["cardIds"]:
                     fail(502, "storyboard_plan_invalid", "4컷 설계의 카드 순서가 달라서 생성을 요청하지 않았어요.")
                 job.update(status="planned", plan=plan.model_dump(), reference_uploads=[], seed=secrets.randbits(48),

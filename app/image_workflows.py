@@ -5,6 +5,8 @@ https://github.com/Comfy-Org/workflow_templates/blob/main/templates/image_flux2_
 https://docs.comfy.org/tutorials/image/qwen/qwen-image-edit-2511
 https://docs.comfy.org/tutorials/image/qwen/qwen-image-2512
 """
+import re
+
 from .video_models import WorkflowNode
 from .video_workflows import validate_graph
 from .studio_style import mood_instruction
@@ -24,7 +26,7 @@ PORTRAIT_SIZE = 768
 ILLUSTRATION_STYLE = "Simple animation-style image or illustration. "
 PLANNING_STYLE_INSTRUCTION = (
     "그림체 요구는 'Simple animation-style image or illustration.'입니다. "
-    "출력에는 행동·배경과 사건 의미만 작성하세요. 인물 외형을 텍스트로 묘사하지 마세요. "
+    "이미지용 항목에는 보이는 행동·배경·사물만 작성하세요. 인물 외형을 텍스트로 묘사하지 마세요. "
     "스타일 문장은 서버에서 붙이므로 출력에 중복하거나 외형 참고의 그림체 설명을 복사하거나 별도의 스타일 지시를 추가하지 마세요. "
 )
 PORTRAIT_ALLOWED = {"UNETLoader", "CLIPLoader", "VAELoader", "CLIPTextEncode", "ModelSamplingAuraFlow",
@@ -49,6 +51,11 @@ MOOD_ALLOWED = REFERENCE_ALLOWED | {"EmptySD3LatentImage"}
 WIDTH = HEIGHT = 768
 STEPS = 20
 REFERENCE_STEPS = 50
+
+
+def wrap_picture_references(text):
+    """One canonical reference token, without double-wrapping existing tokens."""
+    return re.sub(r"(?<!<)\bPicture\s+([1-9]\d*)\b(?!>)", r"<Picture \1>", text)
 
 
 def compile_portrait(illustration, seed, prefix):
@@ -82,6 +89,7 @@ def compile_image(illustration, seed, prefix):
         return WorkflowNode(class_type=kind, inputs=inputs)
     prompt = (ILLUSTRATION_STYLE + "Respectful adult educational scene. "
               "Anonymous adults, no real likeness, no letters, numbers, logos or speech text. " + illustration.prompt + VISIBLE_FACES + VISUAL_COMPOSITION)
+    prompt = wrap_picture_references(prompt)
     graph = {
         "1": node("UNETLoader", unet_name="flux2_dev_fp8mixed.safetensors", weight_dtype="default"),
         "2": node("CLIPLoader", clip_name="mistral_3_small_flux2_bf16.safetensors", type="flux2", device="default"),
@@ -131,6 +139,7 @@ def compile_reference_image(illustration, seed, prefix, references, *, steps=REF
         prompt += mood_instruction(len(references) + 1)
     if portrait:
         prompt += PORTRAIT_COMPOSITION
+    prompt = wrap_picture_references(prompt)
     graph = {
         "1": node("UNETLoader", unet_name="qwen_image_edit_2511_fp8mixed.safetensors", weight_dtype="default"),
         "2": node("CLIPLoader", clip_name="qwen_2.5_vl_7b_fp8_scaled.safetensors", type="qwen_image", device="default"),
