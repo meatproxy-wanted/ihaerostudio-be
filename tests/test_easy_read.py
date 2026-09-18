@@ -5,13 +5,13 @@ import pytest
 import httpx
 from pydantic import ValidationError
 
-from app.easy_read import TEXT_RULES, VISUAL_COMPOSITION, VISUAL_TASK_RULES, VERSION, text_hints
+from app.easy_read import TEXT_RULES, VISUAL_COMPOSITION, VISUAL_TASK_RULES, VISUAL_VERSION, text_hints
 from app.providers import strict_schema, system_prompt
 from app.providers import Provider
 from app.config import Config
 from app.studio_domain import review_items
 from app.studio_scene import SCENE_TASK, SceneIllustrationPlan
-from app.studio_storyboard import TASK, StoryboardPlan
+from app.studio_storyboard import TASK, StoryboardPlan, Panel, compile_storyboard
 from test_review_rules import state_with, sentence
 from test_studio_generation import client, setup, submissions
 from test_studio_batch import preparation
@@ -45,8 +45,8 @@ def plan():
 
 def test_private_plan_fields_are_required_in_new_openai_schema_but_legacy_plans_load():
     value = SceneIllustrationPlan(**plan())
-    assert value.rendered_prompt().startswith("Single explanation focus")
-    assert VISUAL_COMPOSITION in value.rendered_prompt()
+    assert value.rendered_prompt() == value.prompt
+    assert VISUAL_COMPOSITION not in value.rendered_prompt()
     for schema in (strict_schema(SceneIllustrationPlan), strict_schema(StoryboardPlan)["$defs"]["Panel"]):
         assert {"mainMessage", "keyTerms"} <= set(schema["required"])
     old = {k: v for k, v in plan().items() if k not in {"mainMessage", "keyTerms"}}
@@ -55,6 +55,33 @@ def test_private_plan_fields_are_required_in_new_openai_schema_but_legacy_plans_
         SceneIllustrationPlan(**{**plan(), "mainMessage": ""})
     with pytest.raises(ValidationError):
         SceneIllustrationPlan(**{**plan(), "keyTerms": ["집", "돈", "문서", "법원"]})
+
+
+def test_storyboard_sends_each_scene_once_and_common_rules_once():
+    value = StoryboardPlan(panels=[Panel(cardId=f"card-{i}", **{**plan(),
+        "prompt": f"Picture 1 reviews document numberless scene {i}."}) for i in range(4)])
+    graph = compile_storyboard(value, ["finding"] * 4, 1, "test", ["reference.png"], [])
+    prompt = graph["4"].inputs["prompt"]
+    assert prompt.count(VISUAL_COMPOSITION) == 1
+    assert prompt.count("Simple animation-style image or illustration.") == 1
+    for panel in value.panels:
+        assert prompt.count(panel.prompt) == 1
+        assert panel.mainMessage not in prompt
+        assert panel.focalAction not in prompt
+        assert panel.semanticBoundary not in prompt
+    assert len(prompt) < 1500
+    assert graph["4"].inputs["image1"] == ["30", 0]
+    assert graph["11"].inputs["steps"] == 50
+
+
+def test_storyboard_does_not_block_long_input_or_add_visual_quality_gate():
+    value = StoryboardPlan(panels=[Panel(cardId=f"card-{i}", **{**plan(),
+        "prompt": "A document lies on the table. " * 70}) for i in range(4)])
+    graph = compile_storyboard(value, ["finding"] * 4, 1, "test", ["reference.png"], [])
+    prompt = graph["4"].inputs["prompt"]
+    assert len(prompt) > 6000
+    for panel in value.panels:
+        assert panel.prompt.strip() in prompt
 
 
 @pytest.mark.parametrize("schema,task", [(SceneIllustrationPlan, SCENE_TASK), (StoryboardPlan, TASK)])
@@ -145,7 +172,7 @@ def test_easy_read_upgrade_replans_only_definitely_unsubmitted_storyboards(setup
     with service.store.store.connect() as db:
         updated = json.loads(db.execute("SELECT body FROM studio_image_jobs WHERE id=?", (row["id"],)).fetchone()["body"])
     if status == "prepared":
-        assert updated["easy_read_revision"] == VERSION
+        assert updated["easy_read_revision"] == VISUAL_VERSION
         assert VISUAL_COMPOSITION in updated["workflow"]["4"]["inputs"]["prompt"]
     else:
         assert updated["workflow"] == original_workflow

@@ -134,9 +134,7 @@ class CharacterIdentity:
 def identity_instructions(profiles):
     """Repeat fixed English appearance descriptions verbatim in every scene."""
     lines = [
-        "\nCHARACTER APPEARANCE LOCK. These are fixed fictional character designs, not scene suggestions.",
-        "Keep the same faces, facial hair, hairstyles, clothing layers, colors and shoes in every scene.",
-        "Only pose, expression and setting may change. Do not redesign characters to match their legal roles.",
+        "\nREFERENCE CHARACTERS. Only pose, expression and setting may change.",
     ]
     for profile in profiles:
         facial_hair = ("Clean-shaven. No beard, moustache or stubble."

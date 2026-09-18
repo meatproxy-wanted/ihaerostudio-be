@@ -94,7 +94,7 @@ def test_qwen_receives_full_neutral_references_not_faces_or_pose_sheets(setup):
         assert reference_pixels(ref["libraryCharacterId"]) in upload.content
         assert face_pixels(ref["libraryCharacterId"]) not in upload.content
     graph = json.loads(submissions(control)[0].content)["workflow"]
-    assert graph["11"]["inputs"]["steps"] == 40
+    assert graph["11"]["inputs"]["steps"] == 50
     assert graph["30"]["inputs"]["scale_by"] == 0.75
     assert "image3" not in graph["4"]["inputs"]
     assert request_image(setup).status_code == 200

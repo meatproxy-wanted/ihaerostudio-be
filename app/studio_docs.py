@@ -64,7 +64,7 @@ API_DESCRIPTION = """
 | --- | --- |
 | `AI_PROVIDER=demo` | 입력 원문의 명시된 표제를 단순 분류하고 초안에는 원문을 복사합니다. 실제 쉬운 글 생성이 아닙니다. |
 | `AI_PROVIDER=openai` + OpenAI 키·모델 | 자료 분석, 쉬운 글 초안, 문장·용어 보조에서 실제 OpenAI를 호출합니다. |
-| 실제 AI 모드 + 그림 요청 | 기본 library 모드의 인물은 GPT가 10종 중 선택한 얼굴 크롭입니다(Comfy 호출 없음). 장면은 Comfy 키가 필요하며 인물 원본 레퍼런스 또는 별도 분위기 샘플을 Qwen-Image-Edit-2511 (FP8, 40 steps, CFG 4)에 전달합니다. stock 참조에는 별도 샘플을 섞지 않습니다. 기본 정사각형은 768×768입니다. |
+| 실제 AI 모드 + 그림 요청 | 기본 library 모드의 인물은 GPT가 10종 중 선택한 얼굴 크롭입니다(Comfy 호출 없음). 장면은 Comfy 키가 필요하며 인물 원본 레퍼런스 또는 별도 분위기 샘플을 Qwen-Image-Edit-2511 (FP8, 50 steps, CFG 4)에 전달합니다. stock 참조에는 별도 샘플을 섞지 않습니다. 기본 정사각형은 768×768입니다. |
 | 데모의 그림 후보 보기 | 이 자료에 업로드한 그림만 반환합니다. 없으면 candidates는 빈 배열입니다. |
 
 텍스트 생성은 동기 응답입니다. `200/201` 성공 응답은 생성·검증·저장이 필요한 작업을 마친 결과이며
@@ -79,7 +79,7 @@ Comfy 접수 결과가 불확실하거나 작업이 실패·만료되면 자동�
 생성 그림 파일은 서버가 PNG로 보관하고 `/api/studio/assets/{id}` 주소로 내주므로 제공자의 임시 URL 만료에 영향을 받지 않습니다.
 
 옵트인 `STUDIO_SCENE_MODE=storyboard4` 실험은 prepare-images의 장면 최대 4개를
-Qwen Edit 40 steps·CFG 4의 1024×1024 시트로 생성해 각각 512×512로 자릅니다.
+Qwen Edit 50 steps·CFG 4의 1024×1024 시트로 생성해 각각 512×512로 자릅니다.
 기준 인물은 묶음 전체 1~3명이고 시트와 모든 크롭이 자료 용량 한도에 포함됩니다.
 진행 중 일괄 요청은 같은 응답 계약을 사용하며 completed가 최대 4씩 증가합니다.
 실험의 Comfy 조회 대기는 최대 45초이고 전체 HTTP 제한이 아닙니다.
@@ -254,7 +254,7 @@ describe("prepare_images", "편집 진입 그림 자동 준비 — 캐릭터 선
     "편집 진입 직후 자동으로 호출합니다. 글은 먼저 document/generate로 만듭니다. 기본 STUDIO_SCENE_MODE=single은 요청당 최대 카드 하나를 처리합니다. 옵트인 storyboard4는 장면 최대 4개를 한 시트로 생성·분할합니다.",
     "project_id만 지정하고 본문은 없습니다. document/generate로 글을 먼저 만듭니다.",
     "{document,project,generation:{status,phase,completed,total,currentCardId}}를 반환합니다. running이면 같은 POST를 이어 호출합니다. ready는 전체 적용 완료, skipped는 그림 없음 설정 또는 demo 모드입니다.",
-    "기본 STUDIO_CHARACTER_MODE=library에서는 GPT가 고정 캐릭터 10종에서 선택하고 partyId 배정을 저장합니다. 실제 당사자의 외모 재현이 아닙니다. 얼굴 크롭(768×768)을 카드에 자동 적용·고정하며 얼굴을 Comfy로 새로 그리지 않습니다. 장면의 OpenAI 외형 분석과 Comfy Qwen 입력에는 같은 캐릭터의 한 명짜리 기본 포즈 원본을 전달합니다. 4포즈 시트나 얼굴 크롭은 장면 입력으로 보내지 않고 stock 참조에 별도 화풍 샘플을 섞지 않습니다. 10종 후보와 자동 준비 인물 상한 6명·장면 참조 상한 3명은 별개입니다. Qwen Edit 장면은 40 steps·CFG 4, 정사각형 기준 768×768입니다. stock 참조 없는 새 장면은 분위기 샘플 경로입니다.\n\n완료 그림과 기존 적용·고정 인물은 유지합니다. 페이지를 닫으면 추가 카드 요청은 멈추고 재진입 시 진행 중 원격 작업을 조회합니다. 완료 일괄 준비는 장면 삭제·카드 추가만으로 다시 실행되지 않습니다. 새 장면은 assist/images로 만들고 초안 재생성은 고정 인물을 보존한 뒤 새 장면의 일괄 준비를 초기화합니다. 글·장면·대체텍스트는 편집 가능하며 인물 교체·삭제는 서버에서 차단합니다. 앞서 적용된 카드 결과는 이후 오류에도 남습니다. 접수 불확실·실행 실패·만료 작업을 자동 새 유료 작업으로 대체하지 않습니다.\n\ngenerate 호환 모드는 기존 Qwen 초상 생성과 한 명·흰 배경 GPT 검사를 사용합니다. 접수·접수 불확실 구형 작업은 원래 워크플로우로 조회하므로 steps·해상도가 다를 수 있습니다. 외형·상황 일치는 제작자가 직접 확인합니다.",
+    "기본 STUDIO_CHARACTER_MODE=library에서는 GPT가 고정 캐릭터 10종에서 선택하고 partyId 배정을 저장합니다. 실제 당사자의 외모 재현이 아닙니다. 얼굴 크롭(768×768)을 카드에 자동 적용·고정하며 얼굴을 Comfy로 새로 그리지 않습니다. 장면의 OpenAI 외형 분석과 Comfy Qwen 입력에는 같은 캐릭터의 한 명짜리 기본 포즈 원본을 전달합니다. 4포즈 시트나 얼굴 크롭은 장면 입력으로 보내지 않고 stock 참조에 별도 화풍 샘플을 섞지 않습니다. 10종 후보와 자동 준비 인물 상한 6명·장면 참조 상한 3명은 별개입니다. Qwen Edit 장면은 50 steps·CFG 4, 정사각형 기준 768×768입니다. stock 참조 없는 새 장면은 분위기 샘플 경로입니다.\n\n완료 그림과 기존 적용·고정 인물은 유지합니다. 페이지를 닫으면 추가 카드 요청은 멈추고 재진입 시 진행 중 원격 작업을 조회합니다. 완료 일괄 준비는 장면 삭제·카드 추가만으로 다시 실행되지 않습니다. 새 장면은 assist/images로 만들고 초안 재생성은 고정 인물을 보존한 뒤 새 장면의 일괄 준비를 초기화합니다. 글·장면·대체텍스트는 편집 가능하며 인물 교체·삭제는 서버에서 차단합니다. 앞서 적용된 카드 결과는 이후 오류에도 남습니다. 접수 불확실·실행 실패·만료 작업을 자동 새 유료 작업으로 대체하지 않습니다.\n\ngenerate 호환 모드는 기존 Qwen 초상 생성과 한 명·흰 배경 GPT 검사를 사용합니다. 접수·접수 불확실 구형 작업은 원래 워크플로우로 조회하므로 steps·해상도가 다를 수 있습니다. 외형·상황 일치는 제작자가 직접 확인합니다.",
     "ready/skipped 뒤 최신 document와 project를 캐시에 넣고 편집기를 엽니다. 진행 중에는 phase와 completed/total을 표시하고 편집·자동 저장을 시작하지 않습니다. 오류 시 중단하고 사용자에게 표시합니다. 프론트 취소는 원격 유료 작업 취소가 아니며 다음 진입에 이어받습니다.",
     ref("StudioImagePreparation"), {"document": ex.DOCUMENT, "project": ex.DRAFT_PROJECT, "generation": {"status": "running", "phase": "scenes", "completed": 0, "total": 4, "currentCardId": "card-1"}},
     errors="not_found character_library_unavailable character_library_changed character_selection_invalid version_conflict image_in_progress portrait_composition_invalid character_locked character_reference_limit image_card_changed invalid_party image_limit image_missing_output character_reference_invalid character_reference_ambiguous character_reference_unclear comfy_not_configured comfy_auth_error comfy_insufficient_credits comfy_rate_limited comfy_workflow_unavailable image_submission_unknown comfy_connection_or_response_error comfy_invalid_response comfy_asset_host_not_allowed comfy_download_failed image_generation_failed " + AI_ERRORS)
@@ -290,7 +290,7 @@ describe("explain", "용어 설명 제안 — 사건 문맥에 맞춘 쉬운 풀
 describe("image_candidates", "그림 후보 생성·조회 — OpenAI 장면 설명과 Comfy 그림",
     "저장된 장면 카드의 그림 후보를 요청할 때 호출합니다. 인물 얼굴은 prepare-images에서 먼저 자동 적용하며 고정 인물 변경은 불가합니다.", "JSON {cardId}를 보냅니다. 카드 문장·원문 근거·당사자 표시 이름은 저장된 문서에서 읽으므로 자동 저장 완료 후 요청하세요. 프롬프트·워크플로·jobId는 FE에서 보내지 않습니다.",
     "{candidates:[{src,alt,meaning}]}를 반환합니다. 실제 AI의 인물 후보는 기본 모드에서 고정 캐릭터 얼굴이며 장면은 Comfy 결과 한 장입니다. 업로드 자산이 이어집니다. src는 서버에 보관한 /api/studio/assets/{id} 주소입니다. 예제 PNG는 형식 설명용이며 실제 품질 예시가 아닙니다.",
-    "기본 library 모드의 인물 후보는 저장한 캐릭터 배정의 얼굴 크롭입니다. 장면은 저장된 문장·원문 근거와 적용된 인물 레퍼런스를 사용합니다. 고정 캐릭터의 경우 같은 캐릭터의 한 명짜리 기본 포즈 원본을 OpenAI 외형 분석과 Qwen 입력에 전달하며 시트 전체나 얼굴 크롭은 보내지 않습니다. 분위기 샘플은 stock 참조 없는 경로에서만 가볍게 참고하고 인물 참조가 3개면 별도 샘플은 없습니다.\n\nOpenAI는 외형을 분석·캐시하고 행동·관계·사물 상태·주장/사실/명령/완료를 구분해 장면을 설계합니다. Qwen-Image-Edit-2511 FP8, 40 steps·CFG 4, 정사각형 기준 768×768로 한 장을 생성합니다. 장면 참조는 최대 3명, 프로젝트 기준 그림은 최대 6명입니다. 결과 외형·상황·의미를 자동 보증하거나 불일치 그림을 자동 유료 보정하지 않습니다.\n\ngenerate 호환 모드의 새 초상은 분위기 샘플을 사용하는 Qwen Edit 생성과 한 명·흰 배경 검사를 거칩니다. 기존 적용 인물 및 접수·접수 불확실 구형 작업은 유지합니다. 그 작업은 원래 steps·해상도로 끝날 수 있습니다.\n\n후보는 자산으로 보관하지만 문서에 자동 적용하지 않습니다(자동 적용은 prepare-images). source=library는 생성 장면에도 쓰는 분류값이며 고정 10종만 뜻하지 않습니다. 동일 문맥 결과·진행 작업을 재사용하고 바뀐 문맥은 새 작업일 수 있습니다. demo는 업로드 후보만 반환합니다. 진행 중은 503 image_in_progress로 같은 요청을 이어 조회합니다. 접수 불확실·실행 실패·만료 작업을 새 유료 작업으로 자동 대체하지 않습니다. 생성 중 문맥 변경은 image_card_changed로 오래된 결과 저장을 막습니다. 브라우저 취소는 Comfy 작업 취소가 아닙니다.",
+    "기본 library 모드의 인물 후보는 저장한 캐릭터 배정의 얼굴 크롭입니다. 장면은 저장된 문장·원문 근거와 적용된 인물 레퍼런스를 사용합니다. 고정 캐릭터의 경우 같은 캐릭터의 한 명짜리 기본 포즈 원본을 OpenAI 외형 분석과 Qwen 입력에 전달하며 시트 전체나 얼굴 크롭은 보내지 않습니다. 분위기 샘플은 stock 참조 없는 경로에서만 가볍게 참고하고 인물 참조가 3개면 별도 샘플은 없습니다.\n\nOpenAI는 외형을 분석·캐시하고 행동·관계·사물 상태·주장/사실/명령/완료를 구분해 장면을 설계합니다. Qwen-Image-Edit-2511 FP8, 50 steps·CFG 4, 정사각형 기준 768×768로 한 장을 생성합니다. 장면 참조는 최대 3명, 프로젝트 기준 그림은 최대 6명입니다. 결과 외형·상황·의미를 자동 보증하거나 불일치 그림을 자동 유료 보정하지 않습니다.\n\ngenerate 호환 모드의 새 초상은 분위기 샘플을 사용하는 Qwen Edit 생성과 한 명·흰 배경 검사를 거칩니다. 기존 적용 인물 및 접수·접수 불확실 구형 작업은 유지합니다. 그 작업은 원래 steps·해상도로 끝날 수 있습니다.\n\n후보는 자산으로 보관하지만 문서에 자동 적용하지 않습니다(자동 적용은 prepare-images). source=library는 생성 장면에도 쓰는 분류값이며 고정 10종만 뜻하지 않습니다. 동일 문맥 결과·진행 작업을 재사용하고 바뀐 문맥은 새 작업일 수 있습니다. demo는 업로드 후보만 반환합니다. 진행 중은 503 image_in_progress로 같은 요청을 이어 조회합니다. 접수 불확실·실행 실패·만료 작업을 새 유료 작업으로 자동 대체하지 않습니다. 생성 중 문맥 변경은 image_card_changed로 오래된 결과 저장을 막습니다. 브라우저 취소는 Comfy 작업 취소가 아닙니다.",
     "사용자가 고른 후보에 FE 그림 ID와 source=library를 부여하고 document.images에 넣습니다. 대상 card.imageId를 연결한 뒤 PUT document로 저장하세요. alt와 meaning은 실제 그림과 대조합니다. 편집 중 FE가 이전 후보를 캐시했다면 최신 내용 저장 후 새 요청이 실제 전송되도록 새로고침합니다.", ref("StudioImageCandidates"), ex.IMAGE_CANDIDATES,
     errors="not_found character_library_unavailable character_library_changed character_selection_invalid portrait_composition_invalid character_locked image_limit image_too_large invalid_image unsupported_image image_card_changed character_reference_invalid character_reference_ambiguous character_reference_limit character_reference_unclear comfy_not_configured comfy_auth_error comfy_insufficient_credits comfy_rate_limited comfy_workflow_unavailable image_in_progress image_submission_unknown comfy_connection_or_response_error comfy_invalid_response comfy_asset_host_not_allowed comfy_download_failed image_missing_output image_generation_failed " + AI_ERRORS,
     body={"cardId": "card-1"}, alternatives={"demo_empty": ("데모 모드이며 업로드한 그림이 없음", {"candidates": []})})
@@ -386,7 +386,7 @@ OPS["prepare_images"]["description"] += (
     "\n\n### 롤백 가능한 4컷 실험\n\n"
     "위 해상도는 기본 single 경로입니다. STUDIO_SCENE_MODE=storyboard4에서는 인물 선택·고정은 그대로 두고 "
     "장면 최대 4개를 문서 순서로 예약합니다. GPT는 컷별 글·원문 근거를 설계하고 기준 인물 번호를 통일합니다. "
-    "Qwen Edit 40 steps·CFG 4, 1024×1024 latent로 2×2 시트를 생성해 좌상→우상→좌하→우하의 "
+    "Qwen Edit 50 steps·CFG 4, 1024×1024 latent로 2×2 시트를 생성해 좌상→우상→좌하→우하의 "
     "512×512 컷으로 잘라 한 트랜잭션에서 함께 적용합니다. 원본도 보관하지만 독자 문서에는 넣지 않습니다. "
     "이지리드 설계는 컷마다 핵심 뜻 하나와 구체적인 단어를 정하고, 근거 있는 집·돈·문서 등의 익숙한 아이콘을 적극 활용합니다. "
     "장식과 배경을 줄이며 아이콘 설명·금액은 그림 밖의 글에 둡니다. 고정 아이콘 조합 렌더러나 실제 그림 의미 검사 기능은 아닙니다. "

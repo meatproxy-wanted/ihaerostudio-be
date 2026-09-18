@@ -177,6 +177,9 @@ class StudioGeneration:
         else:
             legacy_presets.insert(0, "qwen-image-2512-cartoon-solo-portrait-512-20steps-v7")
         legacy_presets.extend([
+            "qwen-image-edit-2511-animation-768-40steps-action-scene-v9",
+            "qwen-image-edit-2511-light-mood-768-40steps-scene-v2",
+            "qwen-image-edit-2511-light-mood-768-40steps-portrait-v2",
             "qwen-image-edit-2511-light-mood-512-40steps-scene-v1",
             "qwen-image-edit-2511-light-mood-512-40steps-portrait-v1",
             "qwen-image-2512-animation-solo-portrait-512-20steps-v8",
@@ -334,35 +337,13 @@ class StudioGeneration:
                     scene = SceneIllustrationPlan.model_validate(job["plan"])
                     plan = IllustrationPlan(prompt=scene.prompt, alt=scene.alt, meaning=scene.meaning)
                     plan = plan.model_copy(update={"prompt": scene.rendered_prompt()})
-                if context["role"] == "person":
-                    plan = plan.model_copy(update={"prompt": plan.prompt +
-                        " Mandatory character portrait framing: exactly one fictional adult in a waist-up portrait, "
-                        "Use a natural pose; do not require looking at or facing the viewer. "
-                        "Make the face large and clear, with visible eyes, nose and mouth, the entire head in frame, "
-                        "on an empty solid pure white (#FFFFFF) background. No other people, background figures, "
-                        "duplicates, reflections, collages, scenery, props or icons. Do not hide or crop the face."})
-                if context["role"] != "person":
-                    plan = plan.model_copy(update={"prompt": plan.prompt +
-                        " Situation-first composition: emphasize the specific event or situation, not a lineup of portraits. "
-                        "Show clearly staged actions, gestures, gaze, spatial relationships and relevant objects with concrete visual detail. "
-                        "Use only details supported by the supplied scene and evidence; use a neutral setting when unspecified. "
-                        "Do not invent events, emotions or completed actions. Preserve allegations versus established facts and court orders."})
-                plan = plan.model_copy(update={"prompt": plan.prompt +
-                    " Absolutely no visible writing: no letters, words, numbers, captions, labels, speech bubbles, logos, "
-                    "watermarks or pseudo-text. Keep documents, signs, screens and clothing unlettered. "
-                    "Communicate the meaning entirely through the visual scene."})
                 if context["role"] == "decision":
                     plan = plan.model_copy(update={"prompt": plan.prompt +
-                        " Mandatory court-decision scene constraint: depict people learning or considering the court order, "
-                        "not carrying it out. Keep their hands apart. Nobody hands over, receives or exchanges money, "
-                        "envelopes, receipts, documents, keys or any other object. No completed refund or agreement. "
-                        "A separate court-decision symbol may establish context; preserve the parties' distinct roles."})
+                        " Court-order consideration only, not performance of the order. "
+                        "Hands apart; no giving, receiving or exchange of objects."})
                 if references:
                     plan = plan.model_copy(update={"prompt": plan.prompt + identity_instructions(job["identity_profiles"]) +
                         ("\nCorrect the previous attempt's mismatches: " + job["correction"] if job.get("correction") else "")})
-                    if any(r.get("libraryCharacterId") for r in references):
-                        plan = plan.model_copy(update={"prompt": plan.prompt +
-                            " Keep the existing illustration appearance and linework of the supplied characters."})
                 if mood:
                     graph = compile_reference_image(plan, job["seed"], "ihaero-" + job["id"], filenames,
                                                     mood=mood_filename, portrait=context["role"] == "person")

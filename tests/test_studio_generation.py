@@ -44,7 +44,7 @@ class PromptProvider:
         self.plans = getattr(self, "plans", []) + [copy.deepcopy(context)]
         if schema.__name__ == "SceneIllustrationPlan":
             return schema(mainMessage="The described request is not a completed payment.", keyTerms=[],
-                prompt="Two anonymous adults considering the described situation; no completed payment.",
+                prompt="The requesting person opens an empty hand toward the other person. The requester stands left, the other person right, in a quiet neutral space. No money changes hands; this is a request, not a completed payment.",
                 focalAction="The requesting person opens an empty hand toward the other person.",
                 staging="The requester stands left, the other person right, looking at each other with their hands apart.",
                 objectsAndSetting="A quiet neutral space, with no money or objects changing hands.",
@@ -427,7 +427,8 @@ def test_decision_workflow_keeps_order_separate_from_completed_payment(setup):
     assert request_image(setup).status_code == 200
     graph = json.loads(submissions(control)[0].content)["workflow"]
     prompt = graph["4"]["inputs"]["text"]
-    assert "Mandatory court-decision scene constraint" in prompt and "Keep their hands apart" in prompt
+    assert "Court-order consideration only, not performance of the order" in prompt
+    assert "Hands apart; no giving, receiving or exchange of objects" in prompt
 
 
 def test_generated_candidate_is_returned_without_identity_check(setup):
@@ -482,9 +483,9 @@ def test_multiple_people_reference_is_rejected_before_comfy_submission(setup):
 def test_non_portrait_emphasizes_situation_without_visible_writing(setup):
     assert request_image(setup).status_code == 200
     prompt = json.loads(submissions(setup[-1])[0].content)["workflow"]["4"]["inputs"]["text"]
-    assert "Situation-first composition" in prompt
-    assert "Absolutely no visible writing" in prompt
-    assert "neutral setting when unspecified" in prompt
+    assert "One clear action or object state per scene" in prompt
+    assert "no letters, numbers, logos or speech text" in prompt
+    assert "Main visible action:" not in prompt
 
 
 @pytest.mark.parametrize("with_references", [False, True])
@@ -495,25 +496,22 @@ def test_scene_staging_reaches_both_renderers_without_extra_ai_calls(setup, with
     assert request_image(setup).status_code == 200
     graph = json.loads(submissions(control)[0].content)["workflow"]
     prompt = graph["4"]["inputs"]["prompt" if with_references else "text"]
-    assert "Main visible action: The requesting person opens an empty hand" in prompt
-    assert "Scene blocking: The requester stands left" in prompt
-    assert "Objects and setting: A quiet neutral space" in prompt
-    assert "Meaning to preserve: A request is not an established event" in prompt
-    assert "with a white background" not in prompt
-    assert "calm colors, white background" not in prompt
-    assert "# 구도 예시" in service.provider.task
-    assert "현재 사건의 사실이나 등장인물로 복사하지 마세요" in service.provider.task
-    assert "주장한 과거 사건이 실제 일어난 장면처럼 재현하지 마세요" in service.provider.task
-    assert "모든 카드를 판사나 저울로 대체하지 마세요" in service.provider.task
+    assert "The requesting person" in prompt
+    assert "Main visible action:" not in prompt
+    assert "Scene blocking:" not in prompt
+    assert "Meaning to preserve:" not in prompt
+    assert prompt.count("One clear action or object state per scene") == 1
+    assert "60단어 이내" in service.provider.task
+    assert "주장은 요청하거나 말하는 장면" in service.provider.task
     assert "role=person" not in service.provider.task
     assert service.provider.context["sentences"][0]["evidence"]
     assert service.provider.calls == 1 and len(submissions(control)) == 1
     assert request_image(setup).status_code == 200
     assert service.provider.calls == 1 and len(submissions(control)) == 1
     if with_references:
-        assert "The reference backgrounds and poses are not scene requirements" in prompt
-        assert "re-use the same adults" in prompt
-        assert graph["11"]["inputs"]["steps"] == 40
+        assert "do not copy portrait backgrounds or layout" in prompt
+        assert "Keep the reference faces, hair, facial hair, clothing, colors and illustration linework" in prompt
+        assert graph["11"]["inputs"]["steps"] == 50
     else:
         assert graph["6"]["inputs"]["width"] == graph["6"]["inputs"]["height"] == 768
         assert graph["9"]["inputs"]["steps"] == 20
@@ -537,4 +535,4 @@ def test_reference_appearance_style_is_not_forwarded_as_a_style_instruction(setu
     prompt = json.loads(submissions(control)[0].content)["workflow"]["4"]["inputs"]["prompt"]
     assert "photorealistic" not in prompt and "skin pores" not in prompt
     assert "Illustration style:" not in prompt
-    assert "CHARACTER APPEARANCE LOCK" in prompt
+    assert "REFERENCE CHARACTERS" in prompt

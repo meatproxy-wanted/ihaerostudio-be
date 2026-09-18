@@ -54,7 +54,8 @@ def test_scene_upgrade_replans_unsubmitted_but_preserves_paid_512_jobs(setup, mo
     assert (current["id"] != original_id) == (status == "ready")
     if updated:
         assert current["scene_revision"] == SCENE_VERSION
-        assert "Main visible action:" in current["workflow"]["4"]["inputs"][key]
+        assert "The requesting person" in current["workflow"]["4"]["inputs"][key]
+        assert "Main visible action:" not in current["workflow"]["4"]["inputs"][key]
         assert current["style_revision"] == STYLE_VERSION
         assert current["resolution_revision"] == "768px-v3"
     else:
@@ -85,7 +86,7 @@ def test_dev_text_generation_and_qwen_edit_receive_ordered_reference_images():
     assert refs["30"].class_type == refs["31"].class_type == "ImageScaleBy"
     assert refs["30"].inputs == {"image": ["21", 0], "upscale_method": "area", "scale_by": 0.75}
     assert refs["31"].inputs == {"image": ["23", 0], "upscale_method": "area", "scale_by": 0.75}
-    assert refs["11"].inputs["steps"] == 40 and refs["11"].inputs["cfg"] == 4.0
+    assert refs["11"].inputs["steps"] == 50 and refs["11"].inputs["cfg"] == 4.0
     assert [refs[k].inputs["image"] for k in ["20", "22"]] == ["first.png", "second.png"]
     assert not any(n.class_type in {"ReferenceLatent", "ConditioningZeroOut", "LoraLoaderModelOnly"} for n in refs.values())
 
@@ -123,16 +124,17 @@ def test_reference_comparison_changes_only_steps():
     medium = compile_reference_image(plan, 42, "comparison", ["first.png", "second.png"], steps=40)
     high = compile_reference_image(plan, 42, "comparison", ["first.png", "second.png"])
     assert low["11"].inputs["steps"] == 20
-    assert medium["11"].inputs["steps"] == 40 and high["11"].inputs["steps"] == 40
-    low["11"].inputs["steps"] = 40
+    assert medium["11"].inputs["steps"] == 40 and high["11"].inputs["steps"] == 50
+    low["11"].inputs["steps"] = 50
+    medium["11"].inputs["steps"] = 50
     assert low == medium == high
     with pytest.raises(ValueError):
         compile_reference_image(plan, 42, "comparison", ["first.png"], steps=100)
 
 
 @pytest.mark.parametrize("status", ["prepared", "running", "submission_unknown", "ready"])
-@pytest.mark.parametrize("old_steps", [20])
-def test_40step_upgrade_preserves_accepted_jobs_and_seed(setup, monkeypatch, status, old_steps):
+@pytest.mark.parametrize("old_steps", [20, 40])
+def test_50step_upgrade_preserves_accepted_jobs_and_seed(setup, monkeypatch, status, old_steps):
     _, service, project, _, card, control = setup
     attach_characters(setup)
     monkeypatch.setattr("app.studio_generation.WAIT_SECONDS", 0)
@@ -161,11 +163,11 @@ def test_40step_upgrade_preserves_accepted_jobs_and_seed(setup, monkeypatch, sta
     with service.store.store.connect() as db:
         jobs = [json.loads(r["body"]) for r in db.execute("SELECT body FROM studio_image_jobs").fetchall()]
     current = next(j for j in jobs if j["fingerprint"] == fingerprint(context))
-    assert current["workflow"]["11"]["inputs"]["steps"] == (40 if status in {"prepared", "ready"} else old_steps)
+    assert current["workflow"]["11"]["inputs"]["steps"] == (50 if status in {"prepared", "ready"} else old_steps)
     assert (current["id"] != original_id) == (status == "ready")
     if status == "prepared":
         assert current["seed"] == original_seed
-        original_workflow["11"]["inputs"]["steps"] = 40
+        original_workflow["11"]["inputs"]["steps"] = 50
         assert current["workflow"] == original_workflow
     elif status in {"running", "submission_unknown"}:
         assert current["workflow"] == original_workflow
@@ -217,7 +219,7 @@ def test_all_image_paths_require_visible_faces_not_audience_facing():
     for graph in graphs:
         prompt = graph["4"].inputs.get("text", graph["4"].inputs.get("prompt"))
         assert "eyes, nose and mouth" in prompt
-        assert "do not require" in prompt
+        assert "do not require" in prompt or "not forced eye contact with the viewer" in prompt
         assert "Face the viewer directly" not in prompt
         assert "angle both people" not in prompt
         assert "three-quarter front view" not in prompt

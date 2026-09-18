@@ -125,6 +125,7 @@ def test_legacy_job_upgrade_does_not_duplicate_paid_work(setup, monkeypatch, sta
         assert job["status"] == status
         job["fingerprint"] = group["digest"]
         job["workflow"]["6"]["inputs"].update(width=2048, height=2048)
+        job["workflow"]["11"]["inputs"]["steps"] = 40
         db.execute("UPDATE studio_image_jobs SET fingerprint=?,body=? WHERE id=?",
                    (group["digest"], json.dumps(job), row["id"]))
     control["submit_error"] = None
@@ -145,6 +146,7 @@ def test_legacy_job_upgrade_does_not_duplicate_paid_work(setup, monkeypatch, sta
             assert image.size == (1024, 1024)
         if status == "prepared":
             assert json.loads(submissions(control)[-1].content)["workflow"]["6"]["inputs"]["width"] == 1024
+            assert json.loads(submissions(control)[-1].content)["workflow"]["11"]["inputs"]["steps"] == 50
     assert service.provider.storyboard_calls == 1
 
 
@@ -175,7 +177,7 @@ def test_batch_groups_and_crops_atomically_without_contract_change(setup, count)
         graph = json.loads(request.content)["workflow"]
         assert graph["6"]["class_type"] == "EmptySD3LatentImage"
         assert graph["6"]["inputs"] == {"width": 1024, "height": 1024, "batch_size": 1}
-        assert graph["11"]["inputs"]["steps"] == 40
+        assert graph["11"]["inputs"]["steps"] == 50
         prompt = graph["4"]["inputs"]["prompt"]
         assert "one educational scene" not in prompt and "Do not create" not in prompt
         assert "BOTTOM RIGHT quadrant" in prompt

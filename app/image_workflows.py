@@ -8,6 +8,7 @@ https://docs.comfy.org/tutorials/image/qwen/qwen-image-2512
 from .video_models import WorkflowNode
 from .video_workflows import validate_graph
 from .studio_style import mood_instruction
+from .easy_read import VISUAL_COMPOSITION
 
 ALLOWED = {"UNETLoader", "CLIPLoader", "VAELoader", "CLIPTextEncode", "FluxGuidance", "BasicGuider",
            "EmptyFlux2LatentImage", "RandomNoise", "KSamplerSelect", "Flux2Scheduler",
@@ -15,9 +16,9 @@ ALLOWED = {"UNETLoader", "CLIPLoader", "VAELoader", "CLIPTextEncode", "FluxGuida
 STYLE_VERSION = "simple-animation-illustration-v3"
 RESOLUTION_VERSION = "768px-v3"
 PRESET = "flux2-dev-animation-768-action-scene-v8"
-REFERENCE_PRESET = "qwen-image-edit-2511-animation-768-40steps-action-scene-v9"
-MOOD_PRESET = "qwen-image-edit-2511-light-mood-768-40steps-scene-v2"
-MOOD_PORTRAIT_PRESET = "qwen-image-edit-2511-light-mood-768-40steps-portrait-v2"
+REFERENCE_PRESET = "qwen-image-edit-2511-animation-768-50steps-concise-scene-v10"
+MOOD_PRESET = "qwen-image-edit-2511-light-mood-768-50steps-scene-v3"
+MOOD_PORTRAIT_PRESET = "qwen-image-edit-2511-light-mood-768-50steps-portrait-v3"
 PORTRAIT_PRESET = "qwen-image-2512-animation-solo-portrait-768-20steps-v9"
 PORTRAIT_SIZE = 768
 ILLUSTRATION_STYLE = "Simple animation-style image or illustration. "
@@ -38,12 +39,8 @@ PORTRAIT_COMPOSITION = (
     "Keep the person distinct from the plain white background. These portrait constraints override conflicting scene descriptions."
 )
 VISIBLE_FACES = (
-    " If people are depicted, make each person's face clearly visible and identifiable. "
-    "Keep eyes, nose and mouth visible and unobstructed, with the whole head inside the frame. "
-    "Choose natural poses and gaze appropriate to the scene; do not require people to face or look at the viewer. "
-    "Avoid hidden or cropped faces, faceless silhouettes, or objects covering faces. "
-    "Anonymous means a fictional identity, not a hidden or featureless face. "
-    "For scenes without people, do not add a person just to satisfy this framing instruction."
+    " Keep depicted faces clearly visible with eyes, nose and mouth unobstructed. "
+    "Use natural poses and gaze appropriate to the scene, not forced eye contact with the viewer. "
 )
 REFERENCE_ALLOWED = {"UNETLoader", "CLIPLoader", "VAELoader", "LoadImage", "FluxKontextImageScale", "ImageScaleBy",
                      "TextEncodeQwenImageEditPlus", "ModelSamplingAuraFlow", "CFGNorm", "VAEEncode",
@@ -51,7 +48,7 @@ REFERENCE_ALLOWED = {"UNETLoader", "CLIPLoader", "VAELoader", "LoadImage", "Flux
 MOOD_ALLOWED = REFERENCE_ALLOWED | {"EmptySD3LatentImage"}
 WIDTH = HEIGHT = 768
 STEPS = 20
-REFERENCE_STEPS = 40
+REFERENCE_STEPS = 50
 
 
 def compile_portrait(illustration, seed, prefix):
@@ -84,7 +81,7 @@ def compile_image(illustration, seed, prefix):
     def node(kind, **inputs):
         return WorkflowNode(class_type=kind, inputs=inputs)
     prompt = (ILLUSTRATION_STYLE + "Respectful adult educational scene. "
-              "Anonymous adults, no real likeness, no letters, numbers, logos or speech text. " + illustration.prompt + VISIBLE_FACES)
+              "Anonymous adults, no real likeness, no letters, numbers, logos or speech text. " + illustration.prompt + VISIBLE_FACES + VISUAL_COMPOSITION)
     graph = {
         "1": node("UNETLoader", unet_name="flux2_dev_fp8mixed.safetensors", weight_dtype="default"),
         "2": node("CLIPLoader", clip_name="mistral_3_small_flux2_bf16.safetensors", type="flux2", device="default"),
@@ -116,28 +113,20 @@ def compile_reference_image(illustration, seed, prefix, references, *, steps=REF
         raise ValueError("Expected one to three total references")
     if portrait and (references or not mood):
         raise ValueError("New portraits use only a mood sample, never other character references")
-    if steps not in {20, 40}:
-        raise ValueError("Reference comparison supports only 20 or 40 steps")
+    if steps not in {20, 40, 50}:
+        raise ValueError("Reference comparison supports only 20, 40 or 50 steps")
     def node(kind, **inputs):
         return WorkflowNode(class_type=kind, inputs=inputs)
     pictures = ", ".join(f"Picture {i + 1}" for i in range(len(references)))
-    prompt = (ILLUSTRATION_STYLE + "Edit the supplied character images into one respectful educational scene. "
-              "Recompose the solo portraits into the described actions and setting, not a portrait lineup. "
-              "The reference backgrounds and poses are not scene requirements. "
-              "Keep the same people from " + pictures + ". "
-              "Preserve their faces, hair, clothing and colors. "
-              "Change poses and the scene while keeping the characters recognizable. "
-              "Image numbers in the instruction refer to the matching Picture numbers. "
-              "Only include characters relevant to the described scene. "
-              "Show their distinct roles and the direction of their relationship without swapping identities. "
-              "Do not copy the reference layout or create a contact sheet. No text, numbers, logos. " + illustration.prompt +
-              " Identity preservation takes priority over generic appearance descriptions in the scene: "
-              "re-use the same adults from the reference images. Preserve each person's apparent age, "
-              "face shape, hairstyle, facial hair (including every beard or moustache), skin tone, clothing, "
-              "shoes and body proportions. Do not remove facial hair, make an adult younger, change outfits, "
-              "swap faces, or replace anyone with a generic new character. Preserve identity while changing pose and scene." + VISIBLE_FACES)
+    prompt = (ILLUSTRATION_STYLE + "Edit " + pictures + " into the described scene. "
+              "Keep the reference faces, hair, facial hair, clothing, colors and illustration linework. "
+              "Picture numbers identify the matching input images. Only poses and setting may change. "
+              "Only include the people required by the scene; do not copy portrait backgrounds or layout. "
+              "No text, numbers, labels or speech bubbles. " + VISIBLE_FACES + illustration.prompt)
+    if not portrait:
+        prompt += VISUAL_COMPOSITION
     if not references:
-        prompt = ILLUSTRATION_STYLE + "Create the requested fictional adult educational illustration. " + illustration.prompt + VISIBLE_FACES
+        prompt = ILLUSTRATION_STYLE + "Create the requested fictional adult educational illustration. " + illustration.prompt + VISIBLE_FACES + (VISUAL_COMPOSITION if not portrait else "")
     if mood:
         prompt += mood_instruction(len(references) + 1)
     if portrait:

@@ -33,7 +33,7 @@ def test_mood_is_uploaded_last_and_cached(setup, monkeypatch, with_characters):
     assert sample_pixels() in uploads[-1].content
     assert f"Picture {count + 1} is only a light reference" in graph["4"]["inputs"]["prompt"]
     assert "Existing character identity and the requested situation take priority" in graph["4"]["inputs"]["prompt"]
-    assert graph["11"]["inputs"]["steps"] == 40
+    assert graph["11"]["inputs"]["steps"] == 50
     if not count:
         assert graph["6"]["class_type"] == "EmptySD3LatentImage"
         assert graph["6"]["inputs"] == {"width": 768, "height": 768, "batch_size": 1}
@@ -46,7 +46,7 @@ def test_mood_portrait_is_new_solo_composition():
     graph = compile_reference_image(plan, 42, "test", [], mood="mood.png", portrait=True)
     validate_graph(graph, MOOD_ALLOWED)
     assert graph["6"].class_type == "EmptySD3LatentImage"
-    assert graph["11"].inputs["steps"] == 40
+    assert graph["11"].inputs["steps"] == 50
     assert "exactly one" in graph["4"].inputs["prompt"].lower()
     assert "#FFFFFF" in graph["4"].inputs["prompt"]
     assert "two people" in graph["5"].inputs["prompt"]
@@ -61,7 +61,7 @@ def test_mood_batch_generates_locked_portraits_before_scenes(setup, monkeypatch)
     assert all(c["imageId"] for c in cards(result["document"]))
     graphs = [json.loads(r.content)["workflow"] for r in submissions(control)]
     assert all(g["1"]["inputs"]["unet_name"] == "qwen_image_edit_2511_fp8mixed.safetensors" for g in graphs)
-    assert all(g["11"]["inputs"]["steps"] == 40 for g in graphs)
+    assert all(g["11"]["inputs"]["steps"] == 50 for g in graphs)
     assert all(g["6"]["class_type"] == "EmptySD3LatentImage" for g in graphs[:2])
     assert service.provider.portrait_validation_calls == 2
     assert service.provider.profile_calls == 2  # Never describe the mood sample as a person.
@@ -99,7 +99,7 @@ def test_mood_upgrade_never_resubmits_paid_work(setup, monkeypatch, status):
         assert service.provider.calls == 1
     else:
         assert service.provider.calls == 2
-        assert json.loads(submissions(control)[-1].content)["workflow"]["11"]["inputs"]["steps"] == 40
+        assert json.loads(submissions(control)[-1].content)["workflow"]["11"]["inputs"]["steps"] == 50
 
 
 @pytest.mark.parametrize("kind", ["portrait", "scene", "reference"])
@@ -146,7 +146,7 @@ def test_768_upgrade_preserves_paid_512_mood_work(setup, monkeypatch, kind, stat
         assert current["workflow"] == original["workflow"]
     else:
         assert current["resolution_revision"] == "768px-v3"
-        assert current["workflow"]["11"]["inputs"]["steps"] == 40
+        assert current["workflow"]["11"]["inputs"]["steps"] == 50
         if kind != "reference":
             assert current["workflow"]["6"]["inputs"]["width"] == current["workflow"]["6"]["inputs"]["height"] == 768
         assert all(n["inputs"]["scale_by"] == 0.75 for n in current["workflow"].values() if n["class_type"] == "ImageScaleBy")

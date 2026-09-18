@@ -25,7 +25,7 @@ def test_image_docs_distinguish_stock_faces_originals_and_application(client):
     for operation in (prepare, candidates):
         assert "얼굴 크롭" in operation["description"]
         assert "기본 포즈 원본" in operation["description"]
-        assert "40 steps" in operation["description"]
+        assert "50 steps" in operation["description"]
     assert "자동 적용하지 않습니다" in candidates["description"]
     assert "10종 후보" in prepare["description"]
     assert "image_in_progress" in prepare["responses"]["503"]["content"]["application/json"]["examples"]
