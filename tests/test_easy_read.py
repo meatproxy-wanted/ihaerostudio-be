@@ -10,7 +10,7 @@ from app.easy_read import TEXT_RULES, VISUAL_COMPOSITION, VISUAL_TASK_RULES, VIS
 from app.providers import strict_schema, system_prompt
 from app.providers import Provider
 from app.config import Config
-from app.image_workflows import compile_reference_image, wrap_picture_references
+from app.image_workflows import REFERENCE_APPEARANCE, compile_reference_image, wrap_picture_references
 from app.studio_domain import review_items
 from app.studio_scene import SCENE_TASK, SceneIllustrationPlan, SceneCompositionPlan, bound_scene_schema
 from app.studio_storyboard import TASK, StoryboardPlan, Panel, compile_storyboard, StoryboardCompositionPlan, storyboard_schema
@@ -140,6 +140,7 @@ def test_single_reference_compiler_wraps_common_and_scene_tokens_and_keeps_setti
     graph = compile_reference_image(SimpleNamespace(prompt=scene.rendered_prompt(refs)), 42, "test", ["a.png", "b.png"])
     prompt = graph["4"].inputs["prompt"]
     assert "Edit <Picture 1>, <Picture 2> into" in prompt
+    assert prompt.count(REFERENCE_APPEARANCE) == 1
     assert "<Picture 2> (expression:" in prompt
     assert scene.mainMessage not in prompt and scene.semanticBoundary not in prompt
     assert "Court-order consideration" not in prompt
@@ -165,6 +166,7 @@ def test_storyboard_structured_sections_are_scoped_per_cut_and_share_reference_m
     assert "Exactly 1 person" in right and "<Picture 2> (" not in right
     assert prompt.count("Characters (expressions):") == prompt.count("Situation:") == prompt.count("Objects:") == 2
     assert prompt.count("Use the reference images for character appearance.") == 1
+    assert prompt.count(REFERENCE_APPEARANCE) == 1
 
 
 def test_private_plan_fields_are_required_in_new_openai_schema_but_legacy_plans_load():

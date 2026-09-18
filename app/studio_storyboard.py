@@ -9,7 +9,7 @@ from PIL import Image
 from pydantic import Field, create_model
 
 from .comfy import ComfyFailure
-from .image_workflows import (ILLUSTRATION_STYLE, MOOD_ALLOWED, VISIBLE_FACES, REFERENCE_STEPS,
+from .image_workflows import (ILLUSTRATION_STYLE, MOOD_ALLOWED, VISIBLE_FACES, REFERENCE_STEPS, REFERENCE_APPEARANCE,
                               compile_reference_image, wrap_picture_references)
 from .models import uid
 from .store import fail
@@ -99,8 +99,8 @@ def compile_storyboard(plan, roles, seed, prefix, references, profiles, *, chara
     if not 1 <= len(references) <= 3:
         raise ValueError("Storyboard requires one to three character references")
     prompt = (ILLUSTRATION_STYLE +
-              "Create one square 2-by-2 storyboard with four equal quadrants and a thin white central gutter. "
-              "Use the reference images for character appearance. "
+              "Create one square 2-by-2 storyboard with four equal quadrants and a thin white central gutter. " +
+              REFERENCE_APPEARANCE +
               "Picture numbers below identify the corresponding input images; change only poses and situations. "
               "Keep each scene inside its quadrant, away from the center seams. "
               "No text, numbers, labels or speech bubbles. " + VISIBLE_FACES + VISUAL_COMPOSITION)

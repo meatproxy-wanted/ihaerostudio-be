@@ -24,6 +24,10 @@ MOOD_PORTRAIT_PRESET = "qwen-image-edit-2511-light-mood-768-50steps-portrait-v3"
 PORTRAIT_PRESET = "qwen-image-2512-animation-solo-portrait-768-20steps-v9"
 PORTRAIT_SIZE = 768
 ILLUSTRATION_STYLE = "Simple animation-style image or illustration. "
+REFERENCE_APPEARANCE = (
+    "Use the reference images for character appearance. "
+    "Preserve each character's clothing colors from their corresponding reference image in every scene. "
+)
 PLANNING_STYLE_INSTRUCTION = (
     "그림체 요구는 'Simple animation-style image or illustration.'입니다. "
     "이미지용 항목에는 보이는 행동·배경·사물만 작성하세요. 인물 외형을 텍스트로 묘사하지 마세요. "
@@ -126,8 +130,8 @@ def compile_reference_image(illustration, seed, prefix, references, *, steps=REF
     def node(kind, **inputs):
         return WorkflowNode(class_type=kind, inputs=inputs)
     pictures = ", ".join(f"Picture {i + 1}" for i in range(len(references)))
-    prompt = (ILLUSTRATION_STYLE + "Edit " + pictures + " into the described scene. "
-              "Use the reference images for character appearance. "
+    prompt = (ILLUSTRATION_STYLE + "Edit " + pictures + " into the described scene. " +
+              REFERENCE_APPEARANCE +
               "Picture numbers identify the matching input images. Only poses and setting may change. "
               "Only include the people required by the scene; do not copy portrait backgrounds or layout. "
               "No text, numbers, labels or speech bubbles. " + VISIBLE_FACES + illustration.prompt)
