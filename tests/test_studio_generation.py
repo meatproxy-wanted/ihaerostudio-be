@@ -43,7 +43,8 @@ class PromptProvider:
         self.context, self.task = context, task
         self.plans = getattr(self, "plans", []) + [copy.deepcopy(context)]
         if schema.__name__ == "SceneIllustrationPlan":
-            return schema(prompt="Two anonymous adults considering the described situation; no completed payment.",
+            return schema(mainMessage="The described request is not a completed payment.", keyTerms=[],
+                prompt="Two anonymous adults considering the described situation; no completed payment.",
                 focalAction="The requesting person opens an empty hand toward the other person.",
                 staging="The requester stands left, the other person right, looking at each other with their hands apart.",
                 objectsAndSetting="A quiet neutral space, with no money or objects changing hands.",

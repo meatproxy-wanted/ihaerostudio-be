@@ -92,7 +92,7 @@ def main():
         for index, card_id in enumerate(run["cardIds"]):
             (directory / f"panel-{index + 1}.png").write_bytes(service.store.asset(lookup[card_id]["imageId"])[1])
         (directory / "document.json").write_text(json.dumps(state["document"], ensure_ascii=False, indent=2))
-        print("Saved sheet.png (2048²), panel-1..4.png (1024²), document.json. Inspect layout, identity and semantic fidelity manually.")
+        print("Saved sheet.png (1024²), panel-1..4.png (512²), document.json. Inspect layout, identity and semantic fidelity manually.")
 
 
 if __name__ == "__main__":

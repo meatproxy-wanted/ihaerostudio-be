@@ -94,7 +94,7 @@ RESPONSE_SCHEMAS = {
     "StudioDismissal": obj("제작자가 항목을 직접 확인했다는 기록입니다.", memo=field(STRING, "선택 메모. 빈 문자열도 허용합니다."), at=DATETIME),
     "StudioReviewItem": obj("required는 처리해야 검토 완료가 가능하고 suggested는 완료를 막지 않습니다.",
         key=field(STRING, "확인/복원 요청에 그대로 보내는 항목 키. 대상 내용·근거·구조·설정이 달라지면 바뀔 수 있습니다."),
-        category=field({"type": "string", "enum": ["numbers", "relations", "claim-mix", "image-meaning", "no-anchor", "structure-changed", "hard-term", "long-sentence", "alt-text"]}, "점검 유형. 현재 서버 규칙은 no-anchor, numbers, long-sentence만 생성하며 나머지 값은 FE 계약 호환용입니다."),
+        category=field({"type": "string", "enum": ["numbers", "relations", "claim-mix", "image-meaning", "no-anchor", "structure-changed", "hard-term", "long-sentence", "alt-text"]}, "점검 유형. 현재 규칙은 no-anchor, numbers, long-sentence와 이지리드 표면 점검의 hard-term, relations를 생성합니다. 주장·판단 및 실제 그림 의미는 자동 판정하지 않습니다."),
         level={"type": "string", "enum": ["required", "suggested"]}, title=STRING, detail=STRING,
         target=ref("StudioReviewTarget"), evidence=ref("StudioReviewEvidence"),
         suggestion=field(nullable(obj("수정 제안", text=STRING)), "현재 규칙 점검은 자동 수정 제안 없이 null을 반환합니다."),

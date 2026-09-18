@@ -6,6 +6,7 @@ import pytest
 from app.image_workflows import (ALLOWED, ILLUSTRATION_STYLE, STYLE_VERSION, PORTRAIT_ALLOWED, PORTRAIT_PRESET, REFERENCE_ALLOWED,
                                  compile_image, compile_portrait, compile_reference_image)
 from app.studio_generation import IllustrationPlan, fingerprint, image_context
+from app.studio_scene import SCENE_VERSION
 from app.video_workflows import validate_graph
 from test_studio_generation import client, setup, request_image, submissions, attach_characters
 
@@ -52,7 +53,7 @@ def test_scene_upgrade_replans_unsubmitted_but_preserves_paid_512_jobs(setup, mo
     current = next(j for j in jobs if j["fingerprint"] == fingerprint(context))
     assert (current["id"] != original_id) == (status == "ready")
     if updated:
-        assert current["scene_revision"] == "action-staging-v1"
+        assert current["scene_revision"] == SCENE_VERSION
         assert "Main visible action:" in current["workflow"]["4"]["inputs"][key]
         assert current["style_revision"] == STYLE_VERSION
         assert current["resolution_revision"] == "768px-v3"

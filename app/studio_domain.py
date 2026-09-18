@@ -6,6 +6,7 @@ import re
 
 from .models import now
 from .store import fail
+from .easy_read import text_hints
 
 
 def timestamp():
@@ -260,21 +261,22 @@ LONG_SENTENCE = 60
 
 
 def review_items(state):
-    """Rule checks a producer asked for: missing evidence, numbers the source does not have, long sentences.
+    """Evidence/number checks and advisory Easy-Read surface hints.
 
-    Only missing evidence blocks completion; numbers and length are pointers for the maker to weigh.
-
-    Deliberately narrow. Everything else (who said what, claims vs findings, picture meaning)
-    is the producer's own comparison, guided by the final checklist rather than by items.
+    Only missing evidence blocks completion. Hints do not verify legal meaning,
+    actual image pixels, or reader comprehension; the maker must compare them.
     """
     document = require_document(state)
     items = []
 
-    def add(category, title, detail, target, text, anchors, level="required"):
+    def add(category, title, detail, target, text, anchors, level="required", hint=False, hint_context=None):
         evidence = {"text": text, "anchors": anchors, "structureValue": None, "imageId": None}
         # The key follows the sentence's content and evidence, so an acknowledgement survives
         # re-checks until the sentence itself changes.
-        digest = hashlib.sha256(json.dumps([category, target, evidence], sort_keys=True).encode()).hexdigest()[:24]
+        key_input = [category, target, evidence]
+        if hint:
+            key_input.append([detail, hint_context])  # changed hint inputs reset their acknowledgement
+        digest = hashlib.sha256(json.dumps(key_input, sort_keys=True).encode()).hexdigest()[:24]
         key = f"{category}:{digest}"
         items.append({"key": key, "category": category, "level": level, "title": title, "detail": detail,
                       "target": target, "evidence": evidence, "suggestion": None,
@@ -283,6 +285,11 @@ def review_items(state):
     source_text = "\n".join(p["text"] for p in state["source"]["paragraphs"])
     known_numbers = set(re.findall(r"\d[\d,]*(?:\.\d+)?", source_text.replace(",", "")))
     for card in cards(document):
+        card_text = "\n".join(s["text"] for s in card["sentences"])
+        # Literal glossary explanation presence only: differently worded valid
+        # explanations can still produce an advisory hint, never a rejection.
+        unexplained_terms = [t["term"] for t in document["glossary"]
+                             if t["explanation"].strip() not in card_text]
         for sentence in card["sentences"]:
             target = {"type": "sentence", "cardId": card["id"], "sentenceId": sentence["id"]}
             text, anchors = sentence["text"], sentence["anchors"]
@@ -292,6 +299,20 @@ def review_items(state):
                 add("numbers", "숫자를 원문과 비교해 주세요", "표기가 바뀐 금액·날짜·기간일 수 있어요. 값과 단위를 확인해 주세요.", target, text, anchors, level="suggested")
             if len(text) > LONG_SENTENCE:
                 add("long-sentence", "문장이 길어요", "한 문장에 한 가지 내용을 담아 주세요.", target, text, anchors, level="suggested")
+            hints = {}
+            for category, title, detail in text_hints(text, unexplained_terms):
+                if category in hints:
+                    hints[category][1] += " " + detail
+                else:
+                    hints[category] = [title, detail]
+            for category, (title, detail) in hints.items():
+                # Category/content keys must remain unique even when a sentence
+                # triggers more than one advisory hint of the same category.
+                if category == "long-sentence" and len(text) > LONG_SENTENCE:
+                    continue
+                glossary_context = [(t["term"], t["explanation"]) for t in document["glossary"]
+                                    if t["term"] in text] if category == "hard-term" else None
+                add(category, title, detail, target, text, anchors, level="suggested", hint=True, hint_context=glossary_context)
     return items
 
 

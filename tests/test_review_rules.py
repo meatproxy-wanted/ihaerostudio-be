@@ -1,4 +1,4 @@
-"""The review keeps three rules: missing evidence, unknown numbers, long sentences."""
+"""The original three review rules stay compatible beside advisory Easy-Read hints."""
 from app.studio_domain import review_items
 
 SOURCE = {"paragraphs": [{"id": "p1", "text": "피고는 원고에게 1,000만 원을 지급하라."}]}
@@ -20,7 +20,7 @@ def sentence(text, anchors=(ANCHOR,), verified=False):
     return {"id": "s-" + text[:4], "text": text, "anchors": list(anchors), "origin": "ai-draft", "verified": verified}
 
 
-def test_only_the_three_rules_fire():
+def test_original_three_rules_still_fire_for_these_inputs():
     items = review_items(state_with([
         sentence("피고는 돈을 줘야 해요."),                       # claim card, unverified, no party: no item
         sentence("근거 없는 문장이에요.", anchors=()),           # no-anchor

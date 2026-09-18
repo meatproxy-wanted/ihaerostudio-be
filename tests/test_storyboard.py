@@ -9,7 +9,8 @@ from PIL import Image, ImageDraw
 from app.config import Config
 from app.sources import clean_image
 from app.studio_domain import cards
-from app.studio_storyboard import (StoryboardPlan, Panel, compile_storyboard, context_for, crop_sheet)
+from app.studio_storyboard import (LEGACY_PRESET, StoryboardPlan, Panel, compile_storyboard, context_for,
+                                  crop_sheet, digest_for, normalized_sheet)
 from app.video_models import VideoPreflight
 from test_studio import path
 from test_studio_generation import client, setup, submissions
@@ -20,7 +21,7 @@ from test_remote_store import remote
 COLORS = ("red", "green", "blue", "yellow")
 
 
-def sheet(size=2048):
+def sheet(size=1024):
     image = Image.new("RGB", (size, size), "white")
     draw = ImageDraw.Draw(image)
     half = size // 2
@@ -37,7 +38,8 @@ class StoryboardProvider(SelectingProvider):
         if schema is StoryboardPlan:
             self.storyboard_calls = getattr(self, "storyboard_calls", 0) + 1
             self.storyboard_context = copy.deepcopy(context)
-            panels = [Panel(cardId=c["cardId"], prompt="Reference characters considering the supplied situation.",
+            panels = [Panel(cardId=c["cardId"], mainMessage="The supplied situation is a request or order, not a completed payment.",
+                keyTerms=[], prompt="Reference characters considering the supplied situation.",
                 focalAction="Image 1 opens an empty hand toward image 2.",
                 staging="Image 1 left, image 2 right, separate hands and clearly visible faces.",
                 objectsAndSetting="A neutral space; no money or objects changing hands.",
@@ -80,14 +82,70 @@ def test_crop_row_major_and_original_resolution():
     result = crop_sheet(pixels, 4)
     for data, color in zip(result, COLORS):
         with Image.open(io.BytesIO(data)) as image:
-            assert image.size == (1024, 1024)
+            assert image.size == (512, 512)
             assert image.getpixel((500, 500)) == Image.new("RGB", (1, 1), color).getpixel((0, 0))
     assert len(crop_sheet(pixels, 2)) == 2
-    assert clean_image(pixels)[1:] == (1600, 1600)  # uploads stay unchanged
-    assert clean_image(pixels, max_side=4096)[1:] == (2048, 2048)
+    assert clean_image(sheet(2048))[1:] == (1600, 1600)  # uploads stay unchanged
+    assert clean_image(pixels, max_side=4096)[1:] == (1024, 1024)
     with pytest.raises(HTTPException) as error:
         crop_sheet(sheet(768), 4)
     assert error.value.detail["code"] == "storyboard_size_invalid"
+
+
+def test_legacy_sheet_downsizing_validates_original_workflow():
+    result = normalized_sheet(sheet(2048), 2048)
+    for data, color in zip(crop_sheet(result, 4), COLORS):
+        with Image.open(io.BytesIO(data)) as image:
+            assert image.size == (512, 512)
+            assert image.getpixel((50, 50)) == Image.new("RGB", (1, 1), color).getpixel((0, 0))
+    for actual, expected in [(1024, 2048), (2048, 1024), (768, 768)]:
+        with pytest.raises(HTTPException) as error:
+            normalized_sheet(sheet(actual), expected)
+        assert error.value.detail["code"] == "storyboard_size_invalid"
+
+
+@pytest.mark.parametrize("status", ["running", "prepared", "submission_unknown"])
+def test_legacy_job_upgrade_does_not_duplicate_paid_work(setup, monkeypatch, status):
+    _, service, project, _, _, control = setup
+    ids = enable(setup)
+    monkeypatch.setattr("app.studio_storyboard.WAIT_SECONDS", 0)
+    control["status"] = "running"
+    control["submit_error"] = 400 if status == "prepared" else "timeout" if status == "submission_unknown" else None
+    first = preparation(setup)
+    assert first.status_code == (200 if status == "running" else 503)
+    state, version = service.store.get(project["id"], "alice")
+    group = state["image_batch"]["storyboardGroup"]
+    old_digest = group["digest"]
+    group.pop("preset")  # persisted groups from before the resolution change
+    group["digest"] = digest_for(context_for(state, ids), LEGACY_PRESET)
+    service.store.save(state, "alice", version)
+    with service.store.store.connect() as db:
+        row = db.execute("SELECT id,body FROM studio_image_jobs WHERE fingerprint=?", (old_digest,)).fetchone()
+        job = json.loads(row["body"])
+        assert job["status"] == status
+        job["fingerprint"] = group["digest"]
+        job["workflow"]["6"]["inputs"].update(width=2048, height=2048)
+        db.execute("UPDATE studio_image_jobs SET fingerprint=?,body=? WHERE id=?",
+                   (group["digest"], json.dumps(job), row["id"]))
+    control["submit_error"] = None
+    control["status"] = "succeeded"
+    control["png"] = sheet(1024 if status == "prepared" else 2048)
+    result = preparation(setup)
+    if status == "submission_unknown":
+        assert result.status_code == 503
+        assert result.json()["detail"]["code"] == "image_submission_unknown"
+        assert len(submissions(control)) == 1
+    else:
+        assert result.status_code == 200, result.text
+        assert result.json()["generation"]["status"] == "ready"
+        assert len(submissions(control)) == (2 if status == "prepared" else 1)
+        stored = service.store.get(project["id"], "alice")[0]
+        original = stored["image_batch"]["storyboardSheets"][0]["sheetId"]
+        with Image.open(io.BytesIO(service.store.asset(original)[1])) as image:
+            assert image.size == (1024, 1024)
+        if status == "prepared":
+            assert json.loads(submissions(control)[-1].content)["workflow"]["6"]["inputs"]["width"] == 1024
+    assert service.provider.storyboard_calls == 1
 
 
 @pytest.mark.parametrize("count", [1, 2, 3, 4, 6, 10])
@@ -106,17 +164,17 @@ def test_batch_groups_and_crops_atomically_without_contract_change(setup, count)
         card = next(c for c in cards(result["document"]) if c["id"] == card_id)
         image = images[card["imageId"]]
         with Image.open(io.BytesIO(service.store.asset(image["id"])[1])) as pixels:
-            assert pixels.size == (1024, 1024)
+            assert pixels.size == (512, 512)
             assert pixels.getpixel((50, 50)) == Image.new("RGB", (1, 1), COLORS[index % 4]).getpixel((0, 0))
         assert not any(s["verified"] for s in card["sentences"])
     for original in state["image_batch"]["storyboardSheets"]:
         assert original["sheetId"] not in images
         with Image.open(io.BytesIO(service.store.asset(original["sheetId"])[1])) as pixels:
-            assert pixels.size == (2048, 2048)
+            assert pixels.size == (1024, 1024)
     for request in submissions(control):
         graph = json.loads(request.content)["workflow"]
         assert graph["6"]["class_type"] == "EmptySD3LatentImage"
-        assert graph["6"]["inputs"] == {"width": 2048, "height": 2048, "batch_size": 1}
+        assert graph["6"]["inputs"] == {"width": 1024, "height": 1024, "batch_size": 1}
         assert graph["11"]["inputs"]["steps"] == 40
         prompt = graph["4"]["inputs"]["prompt"]
         assert "one educational scene" not in prompt and "Do not create" not in prompt
@@ -366,7 +424,7 @@ def test_live_harness_with_mock_apis_exports_and_resumes(setup, monkeypatch, tmp
     assert (tmp_path / "sheet.png").is_file()
     for index in range(4):
         with Image.open(tmp_path / f"panel-{index + 1}.png") as image:
-            assert image.size == (1024, 1024)
+            assert image.size == (512, 512)
     assert len(submissions(control)) == 1
     monkeypatch.setattr("sys.argv", ["test_storyboard_live.py", "--live", "--resume", str(tmp_path)])
     main()
@@ -378,7 +436,7 @@ def test_live_harness_with_mock_apis_exports_and_resumes(setup, monkeypatch, tmp
 def test_swagger_documents_experiment_and_rollback(client):
     schema = client.get("/openapi.json").json()
     prepare = schema["paths"]["/api/studio/projects/{project_id}/document/prepare-images"]["post"]
-    assert "storyboard4" in prepare["description"] and "2048×2048" in prepare["description"]
+    assert "storyboard4" in prepare["description"] and "1024×1024" in prepare["description"]
     assert "storyboard_size_invalid" in prepare["responses"]["502"]["content"]["application/json"]["examples"]
 
 

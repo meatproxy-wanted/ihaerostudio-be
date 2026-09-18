@@ -186,7 +186,7 @@ class StudioBatch:
         if current is None:
             fail(409, "image_card_changed", "자동 생성 대상 카드가 삭제됐어요.")
         if current["role"] != "person" and batch.get("sceneMode", "single") == "storyboard4":
-            from .studio_storyboard import StudioStoryboard, context_for, digest_for
+            from .studio_storyboard import PRESET, StudioStoryboard, context_for, digest_for
 
             def reserve(state):
                 batch = state["image_batch"]
@@ -198,7 +198,7 @@ class StudioBatch:
                 if batch["status"] != "running" or not ids or ids[0] != card_id:
                     fail(409, "image_card_changed", "4컷 생성 대상이 바뀌었어요.")
                 context = context_for(state, ids)
-                batch["storyboardGroup"] = {"id": uid(), "cardIds": ids, "digest": digest_for(context)}
+                batch["storyboardGroup"] = {"id": uid(), "cardIds": ids, "digest": digest_for(context), "preset": PRESET}
 
             state = self.update(project_id, owner, reserve)
             try:

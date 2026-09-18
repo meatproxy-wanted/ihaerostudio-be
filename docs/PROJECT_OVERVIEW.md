@@ -21,7 +21,7 @@ AI 초안 이후 제작자가 해야 하는 원문 대조, 편집, 검토, 읽�
 | ① 판결문 업로드 | PDF 텍스트 추출 또는 텍스트 입력, 설정 및 사건 구조 분석·저장 | `POST /projects/pdf`, `POST /projects/text`, `PUT /projects/{id}/settings` |
 | ② 사건 구조 확인 | 원문·당사자·주장·판단·결정 조회와 제작자 수정 | `GET /projects/{id}/source`, `GET/PUT /projects/{id}/structure` |
 | ③ 쉬운 글·그림 편집 | 글 초안 생성, 편집 진입 시 그림 자동 준비·적용, 문장·용어 보조, 장면 변경·업로드, 문서 저장 | `POST /projects/{id}/document/generate`, `POST /projects/{id}/document/prepare-images`, `POST /projects/{id}/assist/...`, `GET/PUT /projects/{id}/document` |
-| ④ 검토하기 | 세 가지 규칙 점검, 항목 확인/복원, 제작자 최종 체크리스트 | `POST /projects/{id}/review/run`, `/dismiss`, `/dismiss-all`, `/restore`, `/complete` |
+| ④ 검토하기 | 근거·숫자·이지리드 표면 점검, 항목 확인/복원, 제작자 최종 체크리스트 | `POST /projects/{id}/review/run`, `/dismiss`, `/dismiss-all`, `/restore`, `/complete` |
 | ⑤ 결과물 미리보기 | FE 읽기·인쇄 레이아웃. 게시본은 고정 스냅샷 | `GET /projects/{id}/document`, `GET/POST /projects/{id}/publications`, `GET /projects/{id}/publications/{publicationId}` |
 | ⑥ 내보내기·공유 | FE 브라우저 PDF 인쇄와 게시본 읽기 화면 공개/해제 | `PUT /projects/{id}/public`, `GET /reader/{id}` |
 
@@ -50,7 +50,7 @@ AI 초안 이후 제작자가 해야 하는 원문 대조, 편집, 검토, 읽�
 캐릭터셋의 시트에는 4포즈가 있지만 현재 레퍼런스로 쓰는 것은 첫 번째 기본 포즈 한 명입니다.
 시트 전체·다른 포즈 3명·얼굴 크롭을 장면 레퍼런스로 보내지 않습니다.
 고정 자산만 배치하는 장면 합성기는 아닙니다. 기본은 카드별 생성이며,
-`STUDIO_SCENE_MODE=storyboard4`를 켜면 2048×2048의 2×2 이미지 한 장을 만들어 최대 4개의 1024×1024 컷으로 분할합니다.
+`STUDIO_SCENE_MODE=storyboard4`를 켜면 1024×1024의 2×2 이미지 한 장을 만들어 최대 4개의 512×512 컷으로 분할합니다.
 이는 [롤백 가능한 실험](STORYBOARD_EXPERIMENT.md)이고 외형·컷 경계·상황 일치를 보증하지 않습니다.
 
 ## “자동”, “고정”, “수정”의 의미
@@ -77,6 +77,12 @@ AI 초안 이후 제작자가 해야 하는 원문 대조, 편집, 검토, 읽�
 | 문장에 원문 근거 없음 | required | 근거 연결 또는 제작자의 확인이 필요하며 미처리이면 검토 완료 불가 |
 | 원문 전체에 없는 숫자 있음 | suggested | 금액·날짜·기간을 살펴보라는 안내. 수치·단위·관계의 정확성을 검증하지 않음 |
 | 60자 초과 문장 | suggested | 문장 길이를 줄일지 확인. 어절 수나 UTF-16 길이가 아닌 서버 문자열 길이 기준 |
+| 한 항목의 여러 문장 | suggested | 문장별로 나누도록 권고. 정규식 기반 |
+| 일부 이중부정·모호한 참조 | suggested | 직접적인 표현과 인물·대상 이름 반복을 권고 |
+| 용어집 단어의 카드 내 풀이 누락 | suggested | 같은 카드에 풀이 문자가 있는지 확인. 올바른 다른 표현에도 경고할 수 있음 |
+
+[이지리드 적용 규칙](EASY_READ.md)은 생성·수정 지시와 그림 설계를 함께 강화합니다.
+이 점검은 문장 자동 수정·법적 의미 판정·독자 이해도 인증이 아닙니다.
 
 최종 체크리스트의 금액·관계·주장 구분, 그림 사용 시 글그림 의미는 제작자가 직접 확인합니다.
 원문 위치 강조는 근거 연결이며, AI가 법적 의미나 그림의 정확성을 보증했다는 표시는 아닙니다.

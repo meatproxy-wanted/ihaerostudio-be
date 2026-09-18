@@ -35,6 +35,8 @@ def test_review_and_image_field_docs_do_not_claim_extra_rules(client):
     schema = client.get("/openapi.json").json()
     operation = schema["paths"][BASE + "/projects/{project_id}/review/run"]["post"]
     assert f"{LONG_SENTENCE}자를 넘는 문장" in operation["description"]
+    for phrase in ("hard-term", "relations", "정규식", "문장은 자동 수정하지 않습니다"):
+        assert phrase in operation["description"]
     models = schema["components"]["schemas"]
     assert "자동 검토 규칙에는 포함되지 않습니다" in models["DocImage"]["properties"]["alt"]["description"]
     assert "prepare-images는 자동 추가" in models["EasyDocument"]["properties"]["images"]["description"]
