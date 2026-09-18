@@ -45,7 +45,9 @@ Marketplace가 어떤 변수 이름을 만들었든 아래 **코드가 읽는 �
 | `TURSO_AUTH_TOKEN` | 해당 DB 접근 토큰 |
 | `APP_ENV` | `production` |
 | `AUTH_MODE` | 공개 체험용 `anonymous` 또는 제한용 `keys` |
-| `API_KEYS` | keys 모드라면 충분히 긴 등록 토큰 → 제작자 ID JSON |
+| `API_KEYS` | keys 모드는 필수. 미등록 익명 모드는 `{}`. production의 등록 키는 두 모드 모두 32자 이상이며 공개 개발용 토큰은 금지 |
+| `AI_CALLS_PER_HOUR` | 선택적 작업함별 새 GPT 호출 + Comfy 제출 시도 한도. 기본 `0`(제한 없음) |
+| `AI_CALLS_GLOBAL_PER_HOUR` | 선택적 서버 전체 시간당 한도. 기본 `0`. 기존 작업 조회·캐시는 제외. 금액 예산이 아님 |
 | `CORS_ORIGINS` | 실제 FE origin. 여러 개는 쉼표로 구분 |
 | `PUBLIC_BASE_URL` | 안정적인 BE 공개 origin. Production 도메인 자동값을 쓸 수도 있음 |
 | `COMFY_ASSET_ALLOWED_HOSTS` | 기본 `cloud.comfy.org,storage.googleapis.com`. 실제 결과 CDN은 확인 후 정확한 호스트만 추가 |

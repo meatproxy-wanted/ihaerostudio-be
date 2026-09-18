@@ -9,8 +9,9 @@ from PIL import Image, ImageDraw
 from app.config import Config
 from app.sources import clean_image
 from app.studio_domain import cards
+from app.studio_batch import storyboard_groups
 from app.studio_storyboard import (LEGACY_PRESET, StoryboardPlan, Panel, compile_storyboard, context_for,
-                                  crop_sheet, digest_for, normalized_sheet)
+                                  crop_sheet, digest_for, normalized_sheet, StoryboardCompositionPlan, CompositionPanel)
 from app.video_models import VideoPreflight
 from test_studio import path
 from test_studio_generation import client, setup, submissions
@@ -19,6 +20,113 @@ from test_character_library import SelectingProvider
 from test_remote_store import remote
 
 COLORS = ("red", "green", "blue", "yellow")
+
+
+def grouping_state(mentions):
+    names = [{"partyId": str(i), "displayName": "Actor" + str(i)} for i in range(1, 7)]
+    targets = [{"id": "card-" + str(i), "role": "claim", "partyId": None, "imageId": None,
+                "sentences": [{"id": "sentence-" + str(i), "text": text, "anchors": [], "origin": "manual", "verified": False}]}
+               for i, text in enumerate(mentions)]
+    return {"document": {"partyNames": names, "sections": [{"cards": targets}]},
+            "structure": {"parties": [{"id": n["partyId"]} for n in names]}, "source": {"paragraphs": []}}
+
+
+def test_grouping_respects_union_of_reference_identities_and_order():
+    state = grouping_state(["Actor1", "Actor2", "Actor3", "Actor4", "Actor5", "Actor6"])
+    assert storyboard_groups(state, [c["id"] for c in cards(state["document"])]) == [
+        ["card-0", "card-1", "card-2"], ["card-3", "card-4", "card-5"]]
+    state = grouping_state(["Actor1 Actor2", "Actor2 Actor3", "Actor3 Actor4", "Actor4"])
+    assert storyboard_groups(state, [c["id"] for c in cards(state["document"])]) == [
+        ["card-0", "card-1"], ["card-2", "card-3"]]
+
+
+def test_grouping_does_not_silently_drop_references_from_single_card():
+    state = grouping_state(["Actor1 Actor2 Actor3 Actor4"])
+    with pytest.raises(HTTPException) as error:
+        storyboard_groups(state, ["card-0"])
+    assert error.value.detail["code"] == "character_reference_limit"
+
+
+@pytest.mark.parametrize("paid", [False, True])
+def test_legacy_overwide_group_is_repaired_only_before_submission(setup, monkeypatch, paid):
+    from app.studio_storyboard import StudioStoryboard
+    _, service, project, _, _, _ = setup
+    state, version = service.store.get(project["id"], "alice")
+    planned = grouping_state(["Actor1", "Actor2", "Actor3", "Actor4"])
+    state["document"]["partyNames"] = planned["document"]["partyNames"]
+    state["structure"]["parties"] = planned["structure"]["parties"]
+    for section in state["document"]["sections"]:
+        section["cards"] = []
+    state["document"]["sections"][0]["cards"] = planned["document"]["sections"][0]["cards"]
+    ids = [c["id"] for c in cards(state["document"])]
+    state["image_batch"] = {"status": "running", "targets": ids, "completed": [], "sceneMode": "storyboard4",
+                            "storyboardGroup": {"id": "legacy-group", "cardIds": ids, "digest": "legacy-digest"}}
+    service.store.save(state, "alice", version)
+    if paid:
+        with service.store.store.connect() as db:
+            db.execute("INSERT INTO studio_image_jobs VALUES(?,?,?,?,?,?,0)",
+                       ("legacy-job", "alice", project["id"], "storyboard4:legacy-group", "legacy-digest", json.dumps({"id": "legacy-job", "status": "running"})))
+    service.config.studio_scene_mode = "storyboard4"
+    service.config.studio_character_mode = "library"
+    monkeypatch.setattr(service.library, "assign", lambda *args: None)
+    monkeypatch.setattr("app.studio_storyboard.context_for", lambda state, ids: {"cardIds": ids})
+    observed = []
+    monkeypatch.setattr(StudioStoryboard, "run", lambda self, project, owner, group: observed.append(group))
+    assert preparation(setup).status_code == 200
+    assert observed[0]["cardIds"] == (ids if paid else ids[:3])
+    assert (observed[0]["id"] == "legacy-group") is paid
+
+
+def test_initial_capacity_includes_all_future_original_sheets(setup):
+    _, service, project, _, _, control = setup
+    enable(setup, 6)
+    state, version = service.store.get(project["id"], "alice")
+    state.pop("image_batch")
+    state["assets"] += [{"id": f"dummy-{i}", "src": "x", "byteSize": 1}
+                        for i in range(93 - len(state["assets"]))]
+    service.store.save(state, "alice", version)
+    # Six crops fit (99), but two original sheets would make 101.
+    result = preparation(setup)
+    assert result.status_code == 413
+    assert not submissions(control) and not getattr(service.provider, "storyboard_calls", 0)
+
+
+@pytest.mark.parametrize("mode", ["single", "storyboard4"])
+def test_local_call_limit_leaves_unsubmitted_job_safe_to_resume(setup, monkeypatch, mode):
+    from app import ai_limits
+    from test_studio_generation import attach_characters
+    _, service, project, _, card, control = setup
+    if mode == "storyboard4":
+        enable(setup)
+    else:
+        attach_characters(setup)
+    original = ai_limits.consume_ai_call
+    def deny():
+        raise HTTPException(429, detail={"code": "ai_call_limit"})
+    monkeypatch.setattr(ai_limits, "consume_ai_call", deny)
+    result = preparation(setup) if mode == "storyboard4" else setup[0].post(path(project) + "/assist/images", json={"cardId": card["id"]})
+    assert result.status_code == 429 and not submissions(control)
+    with service.store.store.connect() as db:
+        jobs = [json.loads(r["body"]) for r in db.execute("SELECT body FROM studio_image_jobs")]
+    assert any(j["status"] == "prepared" for j in jobs)
+    assert all(j["status"] not in {"submitting", "submission_unknown"} for j in jobs)
+    monkeypatch.setattr(ai_limits, "consume_ai_call", original)
+    result = preparation(setup) if mode == "storyboard4" else setup[0].post(path(project) + "/assist/images", json={"cardId": card["id"]})
+    assert result.status_code == 200 and len(submissions(control)) == 1
+
+
+def test_running_storyboard_poll_does_not_consume_new_call_budget(setup, monkeypatch):
+    enable(setup)
+    monkeypatch.setattr("app.studio_storyboard.WAIT_SECONDS", 0)
+    control = setup[-1]
+    control["status"] = "running"
+    assert preparation(setup).status_code == 200
+    def deny():
+        raise HTTPException(429, detail={"code": "ai_call_limit"})
+    monkeypatch.setattr("app.ai_limits.consume_ai_call", deny)
+    control["status"] = "succeeded"
+    assert preparation(setup).json()["generation"]["status"] == "ready"
+    assert len(submissions(control)) == 1
 
 
 def sheet(size=1024):
@@ -35,14 +143,14 @@ def sheet(size=1024):
 
 class StoryboardProvider(SelectingProvider):
     def call(self, task, context, schema, *, images=()):
-        if schema is StoryboardPlan:
+        if schema is StoryboardCompositionPlan:
             self.storyboard_calls = getattr(self, "storyboard_calls", 0) + 1
             self.storyboard_context = copy.deepcopy(context)
-            panels = [Panel(cardId=c["cardId"], mainMessage="The supplied situation is a request or order, not a completed payment.",
-                keyTerms=[], prompt="Reference characters considering the supplied situation.",
-                focalAction="Image 1 opens an empty hand toward image 2.",
-                staging="Image 1 left, image 2 right, separate hands and clearly visible faces.",
-                objectsAndSetting="A neutral space; no money or objects changing hands.",
+            panels = [CompositionPanel(cardId=c["cardId"], mainMessage="The supplied situation is a request or order, not a completed payment.",
+                keyTerms=[], characters=[{"partyId": r["partyId"], "role": "case party", "expression": "neutral",
+                    "position": "left" if i == 0 else "right", "action": "considers the request with separate hands"}
+                    for i, r in enumerate(c["characterReferences"])],
+                situation="Reference characters consider the supplied request without completing a payment.", objects=[],
                 semanticBoundary="A request or order is not an established event or completed payment.",
                 alt="컷 " + str(i), meaning="문장의 의미를 설명하는 삽화") for i, c in enumerate(context["panels"])]
             if getattr(self, "bad_order", False):

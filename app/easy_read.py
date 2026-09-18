@@ -6,7 +6,7 @@ for all (general/written standards). Legal meaning overrides simplification.
 import re
 
 VERSION = "easy-read-explanation-v1"
-VISUAL_VERSION = "concise-scene-v3"
+VISUAL_VERSION = "structured-scene-v4"
 
 TEXT_RULES = """\n# 이지리드 적용 우선 규칙
 목표는 예쁜 글이나 어린이용 이야기가 아니라 성인이 판결의 핵심 상황을 이해하는 것입니다.

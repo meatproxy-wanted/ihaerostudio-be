@@ -7,7 +7,7 @@ export function createHttpApi(): ApiClient {
     const multipart = body instanceof FormData;
     const response = await fetch(`http://127.0.0.1:8100/api/studio${path}`, {
       method, signal, cache: "no-store",
-      headers: { Authorization: "Bearer dev-only-change-me", ...(body === undefined || multipart ? {} : { "Content-Type": "application/json" }) },
+      headers: { Authorization: "Bearer frontend-contract-visitor-token", ...(body === undefined || multipart ? {} : { "Content-Type": "application/json" }) },
       body: body === undefined ? undefined : multipart ? body : JSON.stringify(body),
     });
     if (!response.ok) {

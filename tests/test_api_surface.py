@@ -1,4 +1,4 @@
-"""The served API is exactly the frontend contract, plus a health probe."""
+"""Explicit frontend and owner-only inspection surface, plus a health probe."""
 import io
 import json
 
@@ -12,7 +12,7 @@ from app.sources import MAX_PDF_BYTES
 from test_studio import BASE, SETTINGS, client, create, draft, path
 
 
-def test_only_frontend_routes_are_served(client):
+def test_only_frontend_and_inspection_routes_are_served(client):
     expected = {
         "/projects": {"get"}, "/projects/text": {"post"}, "/projects/pdf": {"post"},
         "/projects/{project_id}": {"get", "delete"},
@@ -23,6 +23,8 @@ def test_only_frontend_routes_are_served(client):
         "/projects/{project_id}/document": {"get", "put"},
         "/projects/{project_id}/document/generate": {"post"},
         "/projects/{project_id}/document/prepare-images": {"post"},
+        "/projects/{project_id}/image-jobs": {"get"},
+        "/projects/{project_id}/image-jobs/{job_id}": {"get"},
         "/projects/{project_id}/review": {"get"},
         "/projects/{project_id}/publications": {"get", "post"},
         "/projects/{project_id}/publications/{publication_id}": {"get"},
@@ -54,6 +56,8 @@ def test_only_frontend_routes_are_served(client):
     assert client.get("/health", headers={"Authorization": ""}).json()["status"] == "ok"
     assert client.get("/docs").status_code == client.get("/redoc").status_code == 200
     assert schema["paths"][BASE + "/projects/text"]["post"]["security"]
+    assert schema["paths"][BASE + "/projects/{project_id}/image-jobs"]["get"]["security"]
+    assert schema["paths"][BASE + "/projects/{project_id}/image-jobs/{job_id}"]["get"]["security"]
     assert not schema["paths"][BASE + "/reader/{project_id}"]["get"].get("security")
     assert not schema["paths"][BASE + "/assets/{asset_id}"]["get"].get("security")
     assert not hasattr(client.app.state, "images")

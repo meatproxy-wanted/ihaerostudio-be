@@ -97,3 +97,28 @@ def test_character_appearance_cache_is_scoped_and_persistent_on_turso(remote):
     restarted.describe("project", "alice", {**reference, "assetId": "other"}, b"\x89PNG-one")
     restarted.describe("project", "alice", reference, b"\x89PNG-two")
     assert provider.profile_calls == 5
+
+
+def test_upload_conflict_rolls_back_bytes_on_turso(remote, monkeypatch):
+    from test_studio import test_upload_conflict_leaves_no_orphan_bytes as verify
+    verify(remote[0], monkeypatch)
+
+
+def test_upload_insert_failure_rolls_back_project_on_turso(remote, monkeypatch):
+    from test_studio import test_upload_insert_failure_rolls_back_project as verify
+    verify(remote[0], monkeypatch)
+
+
+def test_ai_call_limits_persist_and_rollback_on_turso(remote):
+    from fastapi import HTTPException
+    from app.ai_limits import AiCallLimiter
+    config = Config(ai_calls_per_hour=1, ai_calls_global_per_hour=2)
+    store = remote[0].app.state.store
+    AiCallLimiter(store, config).consume("alice")
+    restarted = AiCallLimiter(store, config)
+    with pytest.raises(HTTPException) as denied:
+        restarted.consume("alice")
+    assert denied.value.status_code == 429
+    restarted.consume("bob")
+    with pytest.raises(HTTPException):
+        restarted.consume("charlie")

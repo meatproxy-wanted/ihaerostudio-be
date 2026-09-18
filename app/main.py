@@ -11,6 +11,7 @@ from fastapi.responses import Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from .config import Config
+from .ai_limits import AiCallLimiter, CALL_CONTEXT
 from .models import ErrorResponse
 from .providers import Provider
 from .store import Store, fail
@@ -55,11 +56,13 @@ class UploadLimitMiddleware:
 def create_app(config: Config | None = None):
     config = config or Config()
     store, provider = Store(config.db_path, config.turso_url, config.turso_token), Provider(config)
+    limiter = AiCallLimiter(store, config)
     api = FastAPI(title="이해로 스튜디오 API", version="0.3.0", description=API_DESCRIPTION,
         swagger_ui_parameters={"filter": True, "displayRequestDuration": True}, responses={
         401: {"model": ErrorResponse}, 404: {"model": ErrorResponse},
         409: {"model": ErrorResponse},
         413: {"model": ErrorResponse, "description": "Content Too Large"},
+        429: {"model": ErrorResponse, "description": "새 외부 AI 호출의 시간당 한도 초과"},
         502: {"model": ErrorResponse}, 503: {"model": ErrorResponse},
         504: {"model": ErrorResponse},
     })
@@ -69,7 +72,11 @@ def create_app(config: Config | None = None):
 
     @api.middleware("http")
     async def security_headers(request, call_next):
-        response = await call_next(request)
+        context_token = CALL_CONTEXT.set(None)
+        try:
+            response = await call_next(request)
+        finally:
+            CALL_CONTEXT.reset(context_token)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         if request.url.path.startswith("/api/studio/assets/"):
@@ -80,16 +87,21 @@ def create_app(config: Config | None = None):
         return response
 
     bearer = HTTPBearer(auto_error=False, description="제작자 토큰. 익명 모드(기본)에서는 브라우저가 만든 방문자 ID처럼 16자 이상의 아무 토큰이나 자기 작업함이 됩니다.")
-    def owner(credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)]):
+    async def owner(credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)]):
         if credentials:
             token = credentials.credentials
+            if token == "dev-only-change-me":
+                fail(401, "unauthorized", "공개된 개발용 토큰은 사용할 수 없어요. 새 제작자 토큰을 사용해 주세요.")
             for key, maker in config.api_keys.items():
                 if hmac.compare_digest(token, key):
+                    CALL_CONTEXT.set((limiter, maker))
                     return maker
             # A public demo without accounts: every well-formed token is its own workspace.
             # The database keeps a hash, so a leaked table cannot be replayed as tokens.
             if config.auth_mode == "anonymous" and ANONYMOUS_TOKEN.fullmatch(token):
-                return "anon-" + hashlib.sha256(token.encode()).hexdigest()[:32]
+                maker = "anon-" + hashlib.sha256(token.encode()).hexdigest()[:32]
+                CALL_CONTEXT.set((limiter, maker))
+                return maker
         fail(401, "unauthorized", "유효한 Bearer 토큰이 필요합니다.")
 
     @api.get("/health", include_in_schema=False)

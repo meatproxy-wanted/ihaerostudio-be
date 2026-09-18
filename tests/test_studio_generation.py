@@ -43,6 +43,15 @@ class PromptProvider:
         self.calls += 1
         self.context, self.task = context, task
         self.plans = getattr(self, "plans", []) + [copy.deepcopy(context)]
+        if schema.__name__ == "SceneCompositionPlan":
+            refs = context.get("characterReferences", [])
+            return schema(mainMessage="The described request is not a completed payment.", keyTerms=[],
+                characters=[{"partyId": r["partyId"], "role": "case party", "expression": "neutral",
+                             "position": "left" if i == 0 else "right", "action": "considers the request with separate hands"}
+                            for i, r in enumerate(refs)],
+                situation="A request is discussed, not a completed payment.", objects=[],
+                semanticBoundary="A request is not an established event or a completed payment.",
+                alt="두 사람이 떨어져 요청 내용을 살펴보는 모습", meaning="요청과 완료를 구분한 설명")
         if schema.__name__ == "SceneIllustrationPlan":
             return schema(mainMessage="The described request is not a completed payment.", keyTerms=[],
                 prompt="The requesting person opens an empty hand toward the other person. The requester stands left, the other person right, in a quiet neutral space. No money changes hands; this is a request, not a completed payment.",
@@ -496,12 +505,14 @@ def test_scene_staging_reaches_both_renderers_without_extra_ai_calls(setup, with
     assert request_image(setup).status_code == 200
     graph = json.loads(submissions(control)[0].content)["workflow"]
     prompt = graph["4"]["inputs"]["prompt" if with_references else "text"]
-    assert "The requesting person" in prompt
+    assert "Characters (expressions):" in prompt
+    assert "Situation: A request is discussed" in prompt
+    assert "Objects: None required" in prompt
     assert "Main visible action:" not in prompt
     assert "Scene blocking:" not in prompt
     assert "Meaning to preserve:" not in prompt
     assert prompt.count("One clear action or object state per scene") == 1
-    assert "60단어 이내" in service.provider.task
+    assert "세 필드는 생략할 수 없습니다" in service.provider.task
     assert "주장은 요청하거나 말하는 장면" in service.provider.task
     assert "role=person" not in service.provider.task
     assert service.provider.context["sentences"][0]["evidence"]
@@ -510,6 +521,8 @@ def test_scene_staging_reaches_both_renderers_without_extra_ai_calls(setup, with
     assert service.provider.calls == 1 and len(submissions(control)) == 1
     if with_references:
         assert "do not copy portrait backgrounds or layout" in prompt
+        assert "Person 1 = the person from Picture 1; position: left" in prompt
+        assert "Person 2 = the person from Picture 2; position: right" in prompt
         assert prompt.count("Use the reference images for character appearance.") == 1
         assert graph["11"]["inputs"]["steps"] == 50
     else:

@@ -52,11 +52,26 @@ def test_keys_mode_only_accepts_registered_tokens(tmp_path):
         assert client.get(BASE + "/projects", headers=ALICE).status_code == 401
 
 
-def test_production_requires_long_keys_only_in_keys_mode(monkeypatch):
+def test_production_validates_registered_keys_in_both_modes(monkeypatch):
     Config(environment="production", provider="demo")
-    with pytest.raises(ValueError, match="Production"):
+    with pytest.raises(ValueError, match="API_KEYS"):
         Config(environment="production", provider="demo", auth_mode="keys")
+    for mode in ["anonymous", "keys"]:
+        with pytest.raises(ValueError, match="Production"):
+            Config(environment="production", auth_mode=mode, api_keys={"short-key": "maker"})
+        Config(environment="production", auth_mode=mode, api_keys={"x" * 32: "maker"})
     with pytest.raises(ValueError, match="AUTH_MODE"):
         Config(auth_mode="open")
     monkeypatch.setenv("API_KEYS", "")
-    assert Config().api_keys == {"dev-only-change-me": "maker-local"}
+    assert Config().api_keys == {}
+
+
+def test_public_development_token_never_maps_to_shared_workspace(tmp_path):
+    with TestClient(make(tmp_path)) as client:
+        created = client.post(BASE + "/projects/text", json={"text": SAMPLE_TEXT, "settings": SETTINGS},
+                              headers={"Authorization": "Bearer dev-only-change-me"})
+        assert created.status_code == 401
+        with client.app.state.store.connect() as db:
+            assert list(db.execute("SELECT owner FROM studio_projects")) == []
+    with pytest.raises(ValueError, match="public development"):
+        Config(api_keys={"dev-only-change-me": "maker-local"})

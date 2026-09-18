@@ -17,7 +17,7 @@ from .studio_characters import reference_bytes
 from .studio_domain import cards, invalidate_review, summarize_document, timestamp
 from .studio_generation import IllustrationPlan, image_context
 from .studio_models import Id, Wire
-from .studio_scene import SCENE_TASK, SceneIllustrationPlan
+from .studio_scene import SCENE_TASK, SceneIllustrationPlan, SceneCompositionPlan
 from .studio_store import StudioStore, asset_size, asset_url
 from .video_models import WorkflowNode
 from .easy_read import VISUAL_VERSION as VERSION, VISUAL_COMPOSITION
@@ -39,10 +39,21 @@ class StoryboardPlan(Wire):
     panels: list[Panel] = Field(min_length=1, max_length=4)
 
 
+class CompositionPanel(SceneCompositionPlan):
+    cardId: Id
+
+
+class StoryboardCompositionPlan(Wire):
+    panels: list[CompositionPanel] = Field(min_length=1, max_length=4)
+
+    def stored_plan(self):
+        return StoryboardPlan(panels=[Panel(cardId=p.cardId, **p.stored_plan().model_dump()) for p in self.panels])
+
+
 TASK = SCENE_TASK + """\n# 4컷 출력
 입력 panels 순서대로 카드당 독립된 컷 하나를 출력하고 cardId와 순서를 유지하세요.
 Picture 번호는 묶음 전체에서 동일합니다. 컷 사이에 새 사건이나 관계를 만들지 마세요.
-각 prompt는 해당 컷의 장면 설명만 적고 전체 시트 배치 지시는 넣지 마세요.
+각 컷의 characters, situation, objects는 그 컷 안에만 적용됩니다. 전체 시트 배치 지시는 넣지 마세요.
 """
 
 
@@ -77,7 +88,7 @@ def check_capacity(state, count, size=0):
         fail(413, "image_limit", "4컷 원본과 잘린 그림을 저장하면 자료의 그림 개수 또는 용량 한도를 넘어요.")
 
 
-def compile_storyboard(plan, roles, seed, prefix, references, profiles):
+def compile_storyboard(plan, roles, seed, prefix, references, profiles, *, character_references=()):
     """Independent 1024 latent, not an upscale of the first character reference."""
     if not 1 <= len(references) <= 3:
         raise ValueError("Storyboard requires one to three character references")
@@ -92,7 +103,7 @@ def compile_storyboard(plan, roles, seed, prefix, references, profiles):
             prompt += f"\n{position} quadrant: leave entirely blank white; no scene, people or objects."
             continue
         panel = plan.panels[index]
-        prompt += f"\n{position} quadrant ONLY: {panel.rendered_prompt()}"
+        prompt += f"\n{position} quadrant ONLY: {panel.rendered_prompt(character_references)}"
         if roles[index] == "decision":
             prompt += (" Court-order consideration only, not performance of the order. Hands apart; "
                        "no giving, receiving or exchange of money, envelopes, papers, keys or any object.")
@@ -164,7 +175,7 @@ class StudioStoryboard:
                 job["status"] = "pending"
                 g.persist(job)
             if job["status"] == "pending":
-                plan = g.provider.call(TASK, context, StoryboardPlan)
+                plan = g.provider.call(TASK, context, StoryboardCompositionPlan).stored_plan()
                 if [p.cardId for p in plan.panels] != group["cardIds"]:
                     fail(502, "storyboard_plan_invalid", "4컷 설계의 카드 순서가 달라서 생성을 요청하지 않았어요.")
                 job.update(status="planned", plan=plan.model_dump(), reference_uploads=[], seed=secrets.randbits(48),
@@ -191,11 +202,14 @@ class StudioStoryboard:
                     g.persist(job)
                 filenames = [u["filename"] for u in uploads]
                 graph = compile_storyboard(StoryboardPlan.model_validate(job["plan"]),
-                    [p["role"] for p in context["panels"]], job["seed"], "ihaero-" + job["id"], filenames, [])
+                    [p["role"] for p in context["panels"]], job["seed"], "ihaero-" + job["id"], filenames, [],
+                    character_references=references)
                 check = g.cloud.preflight(graph, allowed=MOOD_ALLOWED, preset=PRESET, uploaded_images=filenames)
                 if not check.compatible:
                     fail(503, "comfy_workflow_unavailable", "Comfy에서 고해상도 4컷 워크플로를 사용할 수 없어요.")
-                job.update(status="prepared", prepared_at=time.time(), workflow={k: n.model_dump() for k, n in graph.items()})
+                job.update(status="prepared", prepared_at=time.time(), workflow={k: n.model_dump() for k, n in graph.items()},
+                    reference_bindings=[{"imageNumber": r["imageNumber"], "partyId": r["partyId"],
+                                         "assetId": r["assetId"], "purpose": "character"} for r in references])
                 g.persist(job)
             if job["status"] == "prepared":
                 latest = g.store.get(project_id, owner)[0]
@@ -203,6 +217,8 @@ class StudioStoryboard:
                         latest["image_batch"]["status"] != "running" or
                         latest["image_batch"].get("storyboardGroup") != group):
                     fail(409, "image_card_changed", "4컷 대상이 바뀌거나 생성이 중단됐어요.")
+                from .ai_limits import consume_ai_call
+                consume_ai_call()
                 job["status"] = "submitting"
                 g.persist(job)
                 try:

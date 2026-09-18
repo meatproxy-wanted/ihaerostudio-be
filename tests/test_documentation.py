@@ -31,6 +31,26 @@ def test_image_docs_distinguish_stock_faces_originals_and_application(client):
     assert "image_in_progress" in prepare["responses"]["503"]["content"]["application/json"]["examples"]
 
 
+def test_image_mode_and_optional_limits_are_explicit_in_openapi(client):
+    schema = client.get("/openapi.json").json()
+    prepare = schema["paths"][BASE + "/projects/{project_id}/document/prepare-images"]["post"]
+    candidates = schema["paths"][BASE + "/projects/{project_id}/assist/images"]["post"]
+    assert "항상 개별 카드 한 장(1컷)" in candidates["description"]
+    assert "합집합이 3명을 넘기 전에" in prepare["description"]
+    for operation in (prepare, candidates):
+        limited = operation["responses"]["429"]
+        assert "ai_call_limit" in limited["content"]["application/json"]["examples"]
+        assert "Retry-After" in limited["headers"]
+
+
+def test_current_image_document_matches_runtime_steps_and_version():
+    from app.image_workflows import REFERENCE_STEPS
+    document = (ROOT / "docs/IMAGE_GENERATION.md").read_text()
+    assert f"현재 {REFERENCE_STEPS} steps" in document
+    assert CHARACTER_ROOT.name in document
+    assert "별도 외형 분석이나 텍스트 외형 프로필을 사용하지 않습니다" in document
+
+
 def test_review_and_image_field_docs_do_not_claim_extra_rules(client):
     schema = client.get("/openapi.json").json()
     operation = schema["paths"][BASE + "/projects/{project_id}/review/run"]["post"]

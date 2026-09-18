@@ -66,9 +66,12 @@ OpenAI·Comfy·Turso 키는 BE 환경변수에만 넣습니다. 별도 회원가
 기본 library 모드는 GPT 선택 → 고정 캐릭터 얼굴 크롭 저장 → 인물 고정 → Qwen 장면 자동 적용 순서입니다.
 카드 표시용 얼굴과 장면 입력용 기본 포즈 원본은 서버가 구분하므로 새 FE 필드가 필요 없습니다.
 `STUDIO_SCENE_MODE=storyboard4`는 서버 설정만으로 켭니다. 응답 구조는 같고 completed가 최대 4씩 증가할 수 있습니다.
-수동 `assist/images`는 계속 카드별 후보 경로입니다. [실험 문서](STORYBOARD_EXPERIMENT.md)를 참고하세요.
+장면 카드는 순서를 유지하며 인물 합집합이 3명을 넘기 전에 묶음을 나누므로 1~3개씩 완료될 수도 있습니다.
+수동 `assist/images`는 설정과 관계없이 개별 카드 1컷 후보 경로입니다. [실험 문서](STORYBOARD_EXPERIMENT.md)를 참고하세요.
 같은 캐릭터를 장면에 실제 레퍼런스로 넣지만 완벽한 얼굴 일치를 보장하지 않습니다.
 10종 후보와 자동 준비의 인물 상한 6명·장면 상한 3명은 서로 다른 수치입니다.
+선택적 호출 한도를 켠 서버는 새 GPT 호출·Comfy 제출만 `429 ai_call_limit`으로 거절하고 `Retry-After`를 반환합니다.
+이미 제출된 작업 조회나 편집을 막는 한도는 아닙니다. 한도 응답을 접수 불확실로 취급하거나 새 작업을 만들지 말고 이후 같은 API로 재개합니다.
 
 진행 중 FE는 편집·자동 저장을 시작하지 않습니다.
 현재 FE는 실패 시 다시 시도 또는 “생성된 자료로 편집 계속하기”로 부분 결과를 열 수 있습니다.
@@ -146,6 +149,19 @@ Caddy가 HTTPS 인증서를 발급·갱신합니다. SQLite·인증서는 Docker
 `docker compose down -v`는 데이터를 삭제하므로 사용하지 않습니다.
 업데이트 전 SQLite 온라인 백업과 현재 커밋을 기록합니다. 문제가 생기면 이전 코드로 재빌드합니다.
 자동 데이터 마이그레이션 되돌리기는 없습니다.
+
+## 생성 프롬프트 확인 API
+
+`GET /api/studio/projects/{project_id}/image-jobs`에서 `jobs[].jobId`를 선택한 뒤
+`GET /api/studio/projects/{project_id}/image-jobs/{job_id}`로 상세를 읽습니다.
+기존 방문자 Bearer 인증을 그대로 사용합니다. 목록의 `limit`(기본 20, 최대 100)과 `offset`, `nextOffset`으로 페이지를 넘깁니다.
+프론트 UI 변경은 아직 포함하지 않았으므로 Swagger에서도 바로 조회할 수 있습니다.
+
+상세의 `prompts[].text`는 실제 저장된 워크플로우 입력이고 `designs`는 컷별 LLM 분류입니다.
+`settings/references`로 실제 스텝과 Picture 슬롯을 대조합니다. 준비 전에는 최종 입력이 없고 고정 캐릭터 얼굴에는 워크플로우 자체가 없습니다.
+이 API는 폴링·재생성·접수 확인을 하지 않으므로 생성 진행은 기존 `prepare-images`/`assist/images` 응답을 사용합니다.
+원문 개인정보가 포함될 수 있어 이 응답을 로컬 저장소나 공개 공유에 자동 보관하지 않습니다.
+상세 설명은 [이미지 생성 문서](IMAGE_GENERATION.md#실제-전송-프롬프트-조회)를 참고하세요.
 
 ## 계약 검증
 

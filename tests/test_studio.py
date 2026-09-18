@@ -32,6 +32,43 @@ def create(client, settings=None):
     return response.json()
 
 
+def test_upload_conflict_leaves_no_orphan_bytes(client, monkeypatch):
+    from app import studio_api
+    project = create(client)
+    store = client.app.state.studio
+    original = studio_api.cleaned_upload
+    def concurrent_edit(*args):
+        cleaned = original(*args)
+        state, version = store.get(project["id"], "alice")
+        state["project"]["title"] = "동시 수정"
+        store.save(state, "alice", version)
+        return cleaned
+    monkeypatch.setattr(studio_api, "cleaned_upload", concurrent_edit)
+    out = io.BytesIO()
+    Image.new("RGB", (16, 16), "white").save(out, "PNG")
+    response = client.post(path(project) + "/assist/upload-image", files={"file": ("test.png", out.getvalue(), "image/png")})
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "version_conflict"
+    state, _ = store.get(project["id"], "alice")
+    assert state["project"]["title"] == "동시 수정" and state["assets"] == []
+    with store.store.connect() as db:
+        assert db.execute("SELECT COUNT(*) AS n FROM studio_assets").fetchone()["n"] == 0
+
+
+def test_upload_insert_failure_rolls_back_project(client, monkeypatch):
+    from app.studio_store import StudioStore
+    project = create(client)
+    before = client.app.state.studio.get(project["id"], "alice")
+    def broken_insert(*args):
+        raise RuntimeError("simulated asset insert failure")
+    monkeypatch.setattr(StudioStore, "insert_asset", staticmethod(broken_insert))
+    out = io.BytesIO()
+    Image.new("RGB", (16, 16), "white").save(out, "PNG")
+    with pytest.raises(RuntimeError, match="simulated asset"):
+        client.post(path(project) + "/assist/upload-image", files={"file": ("test.png", out.getvalue(), "image/png")})
+    assert client.app.state.studio.get(project["id"], "alice") == before
+
+
 def path(project):
     return BASE + "/projects/" + project["id"]
 

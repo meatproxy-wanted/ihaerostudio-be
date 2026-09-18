@@ -1,9 +1,9 @@
-"""HTTP implementation of every ihaerostudio-fe ApiClient feature group."""
+"""Frontend feature groups and owner-only saved image-job inspection."""
 import copy
 import re
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile
 from pydantic import ValidationError
 from starlette.concurrency import run_in_threadpool
 
@@ -18,6 +18,7 @@ from .studio_store import StudioStore, asset_size, asset_url
 from .studio_images import MAX_UPLOAD, cleaned_upload
 from .studio_generation import StudioGeneration
 from .studio_batch import StudioBatch, preserve_portraits, validate_portrait_locks
+from .studio_job_inspection import ImageJobInspection, ImageJobList, ImageJobDetail
 
 SAMPLE_TEXT = """사건: 데모용 가상 임대차보증금 반환 사건. 실제 사건이나 법원의 판결이 아닙니다.
 
@@ -40,6 +41,7 @@ def register_studio(api, config, base_store, provider, owner):
     generation = StudioGeneration(store, config, provider)
     api.state.studio_generation = generation
     batch = StudioBatch(generation)
+    inspection = ImageJobInspection(store)
     router = APIRouter(prefix="/api/studio", tags=["FE 연동"])
     Owner = Annotated[str, Depends(owner)]
 
@@ -196,6 +198,16 @@ def register_studio(api, config, base_store, provider, owner):
     def prepare_images(project_id: str, maker: Owner):
         return batch.prepare(project_id, maker)
 
+    @router.get("/projects/{project_id}/image-jobs", response_model=ImageJobList)
+    def image_jobs(project_id: str, maker: Owner,
+                   limit: Annotated[int, Query(ge=1, le=100)] = 20,
+                   offset: Annotated[int, Query(ge=0)] = 0):
+        return inspection.listing(project_id, maker, limit, offset)
+
+    @router.get("/projects/{project_id}/image-jobs/{job_id}", response_model=ImageJobDetail)
+    def image_job_detail(project_id: str, job_id: str, maker: Owner):
+        return inspection.get(project_id, maker, job_id)
+
     @router.put("/projects/{project_id}/document")
     def save_document(project_id: str, body: wire.EasyDocument, maker: Owner):
         state, version = state_for(project_id, maker)
@@ -253,7 +265,7 @@ def register_studio(api, config, base_store, provider, owner):
     def explain(project_id: str, body: wire.ExplainInput, maker: Owner):
         return ai_assist(assist_state(project_id, maker), "사건 문맥에 맞게 용어를 성인 독자가 읽기 쉽게 설명하세요. 새로운 법적 조언을 덧붙이지 마세요.", body.model_dump(), wire.Explanation)
 
-    @router.post("/projects/{project_id}/assist/images")
+    @router.post("/projects/{project_id}/assist/images", description="개별 카드 한 장의 그림 후보를 생성합니다. STUDIO_SCENE_MODE는 자동 준비에만 적용되며 이 API는 항상 단일 카드 경로입니다.")
     def image_candidates(project_id: str, body: wire.ImageInput, maker: Owner):
         state = state_for(project_id, maker)[0]
         card = next((c for c in cards(require_document(state)) if c["id"] == body.cardId), None)
@@ -276,9 +288,7 @@ def register_studio(api, config, base_store, provider, owner):
         image = {"id": asset_id, "src": asset_url(config.public_base_url, asset_id),
                  "alt": alt, "meaning": meaning, "source": "upload"}
         # The bytes go to their own row; the project keeps only the URL, so documents stay small.
-        store.put_asset(asset_id, project_id, maker, content_type, cleaned)
-        state["assets"].append({**image, "byteSize": len(cleaned)})
-        store.save(state, maker, version)
+        store.add_asset(state, maker, version, image, content_type, cleaned)
         return {"image": image}
 
     @router.get("/assets/{asset_id}")

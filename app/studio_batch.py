@@ -9,6 +9,28 @@ from .models import uid
 from .store import fail
 from .studio_domain import cards, invalidate_review, require_document, summarize_document, timestamp
 from .studio_generation import fingerprint, image_context
+from .studio_characters import referenced_party_ids
+
+
+def storyboard_groups(state, card_ids):
+    """Keep document order; split before either four cards or three identities is exceeded."""
+    lookup = {c["id"]: c for c in cards(require_document(state))}
+    groups, group, identities = [], [], set()
+    for card_id in card_ids:
+        card = lookup.get(card_id)
+        if card is None:
+            fail(409, "image_card_changed", "자동 생성 대상 카드가 삭제됐어요.")
+        refs = referenced_party_ids(state, card)
+        if not 1 <= len(refs) <= 3:
+            fail(422, "character_reference_limit", "한 장면의 기준 인물은 1~3명이어야 해요. 해당 카드의 인물과 내용을 나눠 주세요.")
+        if group and (len(group) == 4 or len(identities | refs) > 3):
+            groups.append(group)
+            group, identities = [], set()
+        group.append(card_id)
+        identities |= refs
+    if group:
+        groups.append(group)
+    return groups
 
 
 def validate_portrait_locks(state, document):
@@ -95,6 +117,18 @@ class StudioBatch:
                     if job:
                         job["status"] = "abandoned"
                         db.execute("UPDATE studio_image_jobs SET body=?,lease_until=0 WHERE id=?", (json.dumps(job), job["id"]))
+            elif group:
+                # Repair a legacy over-wide reservation only when certainly idle
+                # and unsubmitted. Never regroup accepted or uncertain paid work.
+                row = db.execute("SELECT body,lease_until FROM studio_image_jobs WHERE owner=? AND project_id=? AND card_id=? AND fingerprint=?",
+                    (owner, project_id, "storyboard4:" + group["id"], group["digest"])).fetchone()
+                job = json.loads(row["body"]) if row else None
+                unsubmitted = row is None or (row["lease_until"] <= time.time() and job["status"] in {"pending", "planned", "prepared"})
+                if unsubmitted and len(storyboard_groups(state, group["cardIds"])) > 1:
+                    batch.pop("storyboardGroup")
+                    if job:
+                        job["status"] = "abandoned"
+                        db.execute("UPDATE studio_image_jobs SET body=?,lease_until=0 WHERE id=?", (json.dumps(job), job["id"]))
             active = state["project"]["settings"]["illustrations"] == "with" and self.generation.provider.name != "demo"
             if active and state.get("image_batch", {}).get("status") == "skipped":
                 if state["image_batch"].get("storyboardGroup"):
@@ -135,7 +169,11 @@ class StudioBatch:
                 fail(422, "character_reference_limit", "자동 생성은 기준 인물 6명까지 지원해요. 프로젝트를 나눠 주세요.")
             if any(c["role"] == "person" and not c["partyId"] for c in ordered):
                 fail(422, "invalid_party", "등장인물 카드의 partyId를 지정해 주세요.")
-            if len(state["assets"]) + sum(not c["imageId"] for c in ordered) > 100:
+            missing = [c for c in ordered if not c["imageId"]]
+            sheets = 0
+            if self.generation.config.studio_scene_mode == "storyboard4":
+                sheets = len(storyboard_groups(state, [c["id"] for c in missing if c["role"] != "person"]))
+            if len(state["assets"]) + len(missing) + sheets > 100:
                 fail(413, "image_limit", "모든 카드를 생성하면 그림 100개 한도를 넘어요. 프로젝트를 나눠 주세요.")
             if any(not c["imageId"] for c in ordered) and self.generation.config.studio_character_mode == "generate" and not state.get("character_library"):
                 self.generation.cloud.require_key()
@@ -193,8 +231,10 @@ class StudioBatch:
                 if batch.get("storyboardGroup"):
                     return
                 lookup = {c["id"]: c for c in cards(state["document"])}
-                ids = [i for i in batch["targets"] if i not in batch["completed"] and
-                       i in lookup and not lookup[i]["imageId"] and lookup[i]["role"] != "person"][:4]
+                pending_scenes = [i for i in batch["targets"] if i not in batch["completed"] and
+                                  i in lookup and not lookup[i]["imageId"] and lookup[i]["role"] != "person"]
+                groups = storyboard_groups(state, pending_scenes)
+                ids = groups[0] if groups else []
                 if batch["status"] != "running" or not ids or ids[0] != card_id:
                     fail(409, "image_card_changed", "4컷 생성 대상이 바뀌었어요.")
                 context = context_for(state, ids)

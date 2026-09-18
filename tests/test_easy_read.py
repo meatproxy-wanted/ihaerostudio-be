@@ -10,8 +10,8 @@ from app.providers import strict_schema, system_prompt
 from app.providers import Provider
 from app.config import Config
 from app.studio_domain import review_items
-from app.studio_scene import SCENE_TASK, SceneIllustrationPlan
-from app.studio_storyboard import TASK, StoryboardPlan, Panel, compile_storyboard
+from app.studio_scene import SCENE_TASK, SceneIllustrationPlan, SceneCompositionPlan
+from app.studio_storyboard import TASK, StoryboardPlan, Panel, compile_storyboard, StoryboardCompositionPlan
 from test_review_rules import state_with, sentence
 from test_studio_generation import client, setup, submissions
 from test_studio_batch import preparation
@@ -41,6 +41,72 @@ def plan():
                 prompt="A document explaining the supplied court order.", focalAction="A document remains on a plain surface.",
                 staging="The document is centered with generous space.", objectsAndSetting="One large document pictogram with no lettering.",
                 semanticBoundary="An order is not a completed transfer of money.", alt="결정 내용을 설명하는 문서 그림", meaning="법원이 내린 결정이에요.")
+
+
+def structured_plan():
+    return dict(mainMessage=plan()["mainMessage"], keyTerms=["문서"],
+        characters=[{"partyId": "party-b", "role": "respondent", "expression": "neutral",
+                     "position": "left", "action": "looks at the court-order document"},
+                    {"partyId": "party-a", "role": "requester", "expression": "attentive",
+                     "position": "right", "action": "points toward the document without handing it over"}],
+        situation="Both parties consider a court order, not a completed payment.",
+        objects=[{"name": "court-order document", "stateAndPosition": "centered between the people; no lettering"}],
+        semanticBoundary=plan()["semanticBoundary"], alt=plan()["alt"], meaning=plan()["meaning"])
+
+
+def test_three_sections_are_required_and_server_resolves_actual_reference_numbers():
+    value = SceneCompositionPlan(**structured_plan())
+    schema = strict_schema(SceneCompositionPlan)
+    assert {"characters", "situation", "objects"} <= set(schema["required"])
+    for field in ("characters", "situation", "objects"):
+        incomplete = structured_plan()
+        incomplete.pop(field)
+        with pytest.raises(ValidationError):
+            SceneCompositionPlan(**incomplete)
+    refs = [{"partyId": "party-a", "imageNumber": 1}, {"partyId": "party-b", "imageNumber": 2}]
+    stored = value.stored_plan()
+    restored = SceneIllustrationPlan.model_validate(stored.model_dump())
+    prompt = restored.rendered_prompt(refs)
+    assert "Person 1 = the person from Picture 2; position: left; expression: neutral" in prompt
+    assert "Person 2 = the person from Picture 1; position: right; expression: attentive" in prompt
+    assert "Exactly 2 people." in prompt and prompt.count("Situation:") == prompt.count("Objects:") == 1
+    assert "court-order document: centered between the people" in prompt
+    assert "Show every listed object clearly" in prompt
+    assert stored.prompt not in prompt and stored.semanticBoundary not in prompt
+
+
+def test_repeated_party_is_canonicalized_without_rejection_or_paid_replan():
+    payload = structured_plan()
+    payload["characters"].append(copy.deepcopy(payload["characters"][0]))
+    refs = [{"partyId": "party-a", "imageNumber": 1}, {"partyId": "party-b", "imageNumber": 2}]
+    prompt = SceneCompositionPlan(**payload).stored_plan().rendered_prompt(refs)
+    assert "Exactly 2 people." in prompt and prompt.count("the person from Picture 2;") == 1
+
+
+def test_empty_people_or_objects_are_explicit_and_never_invented():
+    payload = structured_plan()
+    payload["characters"], payload["objects"] = [], []
+    prompt = SceneCompositionPlan(**payload).stored_plan().rendered_prompt()
+    assert "Characters (expressions): No people" in prompt
+    assert "Objects: None required" in prompt
+    assert "Situation:" in prompt
+
+
+def test_storyboard_structured_sections_are_scoped_per_cut_and_share_reference_mapping():
+    first = structured_plan()
+    second = structured_plan()
+    second["characters"] = second["characters"][1:]
+    second["objects"] = []
+    stored = StoryboardCompositionPlan.model_validate({"panels": [
+        {"cardId": "card-1", **first}, {"cardId": "card-2", **second}]}).stored_plan()
+    refs = [{"partyId": "party-a", "imageNumber": 1}, {"partyId": "party-b", "imageNumber": 2}]
+    graph = compile_storyboard(stored, ["claim", "finding"], 1, "test", ["a.png", "b.png"], [], character_references=refs)
+    prompt = graph["4"].inputs["prompt"]
+    left, right = prompt.split("TOP RIGHT quadrant ONLY:")
+    assert "Picture 2; position: left" in left and "Picture 1; position: right" in left
+    assert "Exactly 1 person" in right and "the person from Picture 2;" not in right
+    assert prompt.count("Characters (expressions):") == prompt.count("Situation:") == prompt.count("Objects:") == 2
+    assert prompt.count("Use the reference images for character appearance.") == 1
 
 
 def test_private_plan_fields_are_required_in_new_openai_schema_but_legacy_plans_load():
@@ -84,9 +150,9 @@ def test_storyboard_does_not_block_long_input_or_add_visual_quality_gate():
         assert panel.prompt.strip() in prompt
 
 
-@pytest.mark.parametrize("schema,task", [(SceneIllustrationPlan, SCENE_TASK), (StoryboardPlan, TASK)])
+@pytest.mark.parametrize("schema,task", [(SceneCompositionPlan, SCENE_TASK), (StoryboardCompositionPlan, TASK)])
 def test_new_plan_fields_round_trip_through_openai_transport(monkeypatch, schema, task):
-    expected = plan() if schema is SceneIllustrationPlan else {"panels": [{"cardId": "card-1", **plan()}]}
+    expected = structured_plan() if schema is SceneCompositionPlan else {"panels": [{"cardId": "card-1", **structured_plan()}]}
 
     def post(self, url, **kwargs):
         body = kwargs["json"]
@@ -98,7 +164,7 @@ def test_new_plan_fields_round_trip_through_openai_transport(monkeypatch, schema
 
     monkeypatch.setattr(httpx.Client, "post", post)
     result = Provider(Config(provider="openai", openai_api_key="test", openai_model="test-model")).call(task, {}, schema)
-    focus = result if schema is SceneIllustrationPlan else result.panels[0]
+    focus = result if schema is SceneCompositionPlan else result.panels[0]
     assert focus.keyTerms == ["문서"] and focus.mainMessage == plan()["mainMessage"]
 
 

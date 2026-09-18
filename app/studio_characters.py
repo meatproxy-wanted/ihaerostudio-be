@@ -11,6 +11,21 @@ from .studio_library import catalog, reference_pixels
 MAX_REFERENCES = 6
 
 
+def referenced_party_ids(state, target):
+    """Select identities before portraits exist too, for deterministic batch planning."""
+    names = state["document"]["partyNames"]
+    parties = {p["id"]: p for p in state["structure"]["parties"]}
+    text = " ".join(s["text"] + " " + " ".join(anchor_text(state["source"], a) for a in s["anchors"])
+                    for s in target["sentences"])
+    relevant = {target["partyId"]} if target["partyId"] else set()
+    for name in names:
+        party = parties.get(name["partyId"], {})
+        aliases = {name["displayName"], party.get("sourceLabel", ""), party.get("legalStatus", "")}
+        if any(len(alias.strip()) >= 2 and alias.strip() in text for alias in aliases):
+            relevant.add(name["partyId"])
+    return relevant or {n["partyId"] for n in names}
+
+
 def other_portrait_references(state, party_id):
     """Other applied portraits are contrast data, not image-edit references."""
     document = {**state["document"], "partyNames": [n for n in state["document"]["partyNames"]
@@ -66,14 +81,7 @@ def character_context(state, target, *, select_relevant=True):
     elif select_relevant and references:
         # Use explicit card identities and name/role mentions. If the card is
         # ambiguous, retain references rather than silently guessing its actors.
-        text = " ".join(s["text"] + " " + " ".join(anchor_text(state["source"], a) for a in s["anchors"])
-                        for s in target["sentences"])
-        relevant = {target["partyId"]} if target["partyId"] else set()
-        for character in characters:
-            party = parties.get(character["partyId"], {})
-            aliases = {character["displayName"], party.get("sourceLabel", ""), party.get("legalStatus", "")}
-            if any(len(alias.strip()) >= 2 and alias.strip() in text for alias in aliases):
-                relevant.add(character["partyId"])
+        relevant = referenced_party_ids(state, target)
         if relevant:
             references = [r for r in references if r["partyId"] in relevant]
             characters = [c for c in characters if c["partyId"] in relevant]

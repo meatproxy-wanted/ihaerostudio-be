@@ -8,6 +8,7 @@ import httpx
 from pydantic import ValidationError
 
 from .config import Config
+from .ai_limits import consume_ai_call
 from .models import BlockContent, DraftResult, Evidence, Fact, Party, Structure, SuggestionResult
 from .store import fail
 from .easy_read import TEXT_RULES
@@ -80,6 +81,7 @@ class Provider:
         content = text if not images else [{"type": "input_text", "text": text}] + [
             {"type": "input_image", "image_url": "data:image/png;base64," + base64.b64encode(data).decode(), "detail": "high"}
             for data in images]
+        consume_ai_call()
         try:
             with httpx.Client(timeout=httpx.Timeout(120, connect=5), trust_env=False) as client:
                 response = client.post("https://api.openai.com/v1/responses", headers={

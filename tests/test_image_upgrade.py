@@ -54,7 +54,9 @@ def test_scene_upgrade_replans_unsubmitted_but_preserves_paid_512_jobs(setup, mo
     assert (current["id"] != original_id) == (status == "ready")
     if updated:
         assert current["scene_revision"] == SCENE_VERSION
-        assert "The requesting person" in current["workflow"]["4"]["inputs"][key]
+        prompt = current["workflow"]["4"]["inputs"][key]
+        assert "Characters (expressions):" in prompt and "Situation:" in prompt and "Objects:" in prompt
+        assert current["plan"]["composition"] is not None
         assert "Main visible action:" not in current["workflow"]["4"]["inputs"][key]
         assert current["style_revision"] == STYLE_VERSION
         assert current["resolution_revision"] == "768px-v3"

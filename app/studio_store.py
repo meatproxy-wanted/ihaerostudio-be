@@ -40,14 +40,18 @@ class StudioStore:
         return json.loads(row["body"]), row["version"]
 
     def save(self, state, owner, version):
+        with self.store.connect() as db:
+            self.save_in_transaction(db, state, owner, version)
+
+    @staticmethod
+    def save_in_transaction(db, state, owner, version):
         project = state["project"]
         project["updatedAt"] = now().replace("+00:00", "Z")
-        with self.store.connect() as db:
-            result = db.execute("""UPDATE studio_projects SET body=?,version=version+1,updated_at=?
-                WHERE id=? AND owner=? AND version=? AND deleted=0""",
-                (json.dumps(state), project["updatedAt"], project["id"], owner, version))
-            if result.rowcount != 1:
-                fail(409, "version_conflict", "다른 편집이 저장됐어요. 새로고침 후 다시 시도해 주세요.")
+        result = db.execute("""UPDATE studio_projects SET body=?,version=version+1,updated_at=?
+            WHERE id=? AND owner=? AND version=? AND deleted=0""",
+            (json.dumps(state), project["updatedAt"], project["id"], owner, version))
+        if result.rowcount != 1:
+            fail(409, "version_conflict", "다른 편집이 저장됐어요. 새로고침 후 다시 시도해 주세요.")
 
     def listing(self, owner):
         with self.store.connect() as db:
@@ -68,9 +72,13 @@ class StudioStore:
         db.execute("INSERT INTO studio_assets VALUES(?,?,?,?,?,?,?)",
                    (asset_id, project_id, owner, content_type, data, len(data), now().replace("+00:00", "Z")))
 
-    def put_asset(self, asset_id, project_id, owner, content_type, data):
+    def add_asset(self, state, owner, version, image, content_type, data):
+        """An upload and its aggregate reference commit or roll back together."""
         with self.store.connect() as db:
-            self.insert_asset(db, asset_id, project_id, owner, content_type, data)
+            db.execute("BEGIN IMMEDIATE")
+            state["assets"].append({**image, "byteSize": len(data)})
+            self.save_in_transaction(db, state, owner, version)
+            self.insert_asset(db, image["id"], state["project"]["id"], owner, content_type, data)
 
     def asset(self, asset_id):
         """The picture's content type and bytes, or None. Pictures are public: their ids are unguessable."""

@@ -12,6 +12,8 @@ API_DESCRIPTION = """
 현재 이해로 스튜디오 프론트의 `ApiClient`에 대응하는 백엔드입니다. 모든 업무 API는
 `/api/studio`로 시작하며 **자료 만들기 → 사건 구조 확인 → 쉬운 설명자료 생성·편집 → 검토 → 게시본 생성·공개** 흐름을 지원합니다.
 프론트의 각 요청과 응답은 camelCase 필드명을 사용합니다. 경로 매개변수 `project_id`·`publication_id`는 snake_case입니다.
+추가로 소유자용 `image-jobs` 목록·상세 조회 API에서 실제 워크플로우 프롬프트를 확인할 수 있습니다.
+이는 기존 프론트 ApiClient에 아직 연결되지 않은 읽기 전용 보조 API입니다.
 
 ### 처음 연결할 때의 호출 순서
 
@@ -115,6 +117,7 @@ ERRORS = {
     "character_library_changed": (409, "고정 캐릭터셋 버전이 바뀌었어요.", "이 자료에 배정된 원본 캐릭터 자산을 복원합니다. 기존 배정을 바꾸지 않습니다."),
     "character_selection_invalid": (422, "캐릭터 배정 결과가 올바르지 않아요.", "자료의 등장인물을 확인합니다. 잘못된 배정을 적용하지 않고 동일 요청에서 GPT 선택을 자동 반복하지 않습니다."),
     "unauthorized": (401, "유효한 Bearer 토큰이 필요합니다.", "토큰이 없거나 형식이 맞지 않습니다(익명 모드: 영문·숫자·._~- 16자 이상). keys 모드에서는 API_KEYS에 등록한 토큰이어야 합니다."),
+    "ai_call_limit": (429, "새 AI 호출의 시간당 한도에 도달했어요.", "Retry-After 이후 재시도합니다. AI_CALLS_PER_HOUR와 AI_CALLS_GLOBAL_PER_HOUR는 기본 0(제한 없음)이며 새 GPT 호출·Comfy 제출 시도만 집계합니다. 기존 원격 작업 조회·캐시·편집은 제한하지 않습니다. 금액/토큰 예산은 아닙니다."),
     "not_found": (404, "자료 또는 요청한 항목을 찾을 수 없어요.", "ID·소유권·삭제 여부를 확인합니다. 문서 API는 초안 생성 전에도 404입니다."),
     "version_conflict": (409, "다른 편집이 저장됐어요. 새로고침 후 다시 시도해 주세요.", "최신 자료를 GET하고 변경 내용을 합친 뒤 최신 버전으로 다시 저장합니다."),
     "request_too_large": (413, "요청은 최대 5MB입니다.", "HTTP 요청 본문 전체를 줄입니다. 파일 자체 한도는 이보다 작을 수 있습니다."),
@@ -178,7 +181,7 @@ ERRORS = {
     "checklist_incomplete": (422, "최종 확인 항목을 모두 체크해 주세요.", "그림 설정에 맞는 체크리스트를 중복 없이 정확히 보냅니다."),
     "demo_only": (403, "운영 서버에서는 데모 초기화를 사용할 수 없어요.", "APP_ENV=production이거나 AI_PROVIDER가 demo가 아니면 초기화할 수 없습니다."),
 }
-AI_ERRORS = "ai_input_too_large ai_provider_error ai_incomplete_response ai_refusal ai_rate_limited ai_timeout"
+AI_ERRORS = "ai_input_too_large ai_provider_error ai_incomplete_response ai_refusal ai_rate_limited ai_timeout ai_call_limit"
 STRUCTURE_ERRORS = "invalid_anchor duplicate_id invalid_party invalid_claim"
 DOCUMENT_ERRORS = "invalid_anchor duplicate_id invalid_party invalid_image document_too_large"
 OPS = {}
@@ -287,7 +290,7 @@ describe("explain", "용어 설명 제안 — 사건 문맥에 맞춘 쉬운 풀
     "용어 후보를 선택하거나 사용자가 직접 입력한 용어의 풀이를 만들 때 호출합니다.", "term은 1~100자, context는 주변 문맥(최대 10,000자)입니다. context는 빈 문자열도 가능하며 두 필드 모두 보냅니다. 저장된 문서가 필요합니다.",
     "{explanation: 문자열}을 반환합니다. 현재 사건 문맥에 맞는 쉬운 설명을 요청하며 새 법적 조언을 추가하지 않도록 합니다.", ASSIST_EFFECT,
     "풀이를 대조한 뒤 FE에서 glossary 항목의 id·term·explanation을 구성하고 문서 전체를 저장합니다.", ref("Explanation"), {"explanation": "집을 빌릴 때 맡겨 두는 돈이에요. 이 사건에서는 계약이 끝난 뒤 돌려받을 돈을 말해요."}, errors="not_found ai_not_configured " + AI_ERRORS, body={"term": "임대차보증금", "context": "계약이 끝난 뒤 보증금을 돌려달라고 했습니다."})
-describe("image_candidates", "그림 후보 생성·조회 — OpenAI 장면 설명과 Comfy 그림",
+describe("image_candidates", "개별 카드 1컷 후보 생성·조회 — 자동 준비 모드와 별개",
     "저장된 장면 카드의 그림 후보를 요청할 때 호출합니다. 인물 얼굴은 prepare-images에서 먼저 자동 적용하며 고정 인물 변경은 불가합니다.", "JSON {cardId}를 보냅니다. 카드 문장·원문 근거·당사자 표시 이름은 저장된 문서에서 읽으므로 자동 저장 완료 후 요청하세요. 프롬프트·워크플로·jobId는 FE에서 보내지 않습니다.",
     "{candidates:[{src,alt,meaning}]}를 반환합니다. 실제 AI의 인물 후보는 기본 모드에서 고정 캐릭터 얼굴이며 장면은 Comfy 결과 한 장입니다. 업로드 자산이 이어집니다. src는 서버에 보관한 /api/studio/assets/{id} 주소입니다. 예제 PNG는 형식 설명용이며 실제 품질 예시가 아닙니다.",
     "기본 library 모드의 인물 후보는 저장한 캐릭터 배정의 얼굴 크롭입니다. 장면은 저장된 문장·원문 근거와 적용된 인물 레퍼런스를 사용합니다. 고정 캐릭터의 경우 같은 캐릭터의 한 명짜리 기본 포즈 원본을 Qwen 입력에 전달하며 시트 전체나 얼굴 크롭은 보내지 않습니다. 분위기 샘플은 stock 참조 없는 경로에서만 가볍게 참고하고 인물 참조가 3개면 별도 샘플은 없습니다.\n\nOpenAI는 행동·관계·사물 상태·주장/사실/명령/완료를 구분해 장면을 설계합니다. 별도 외형 분석은 호출하지 않으며 이미지 프롬프트에는 인물 외형은 레퍼런스를 참고한다는 문장만 넣습니다. Qwen-Image-Edit-2511 FP8, 50 steps·CFG 4, 정사각형 기준 768×768로 한 장을 생성합니다. 장면 참조는 최대 3명, 프로젝트 기준 그림은 최대 6명입니다. 결과 외형·상황·의미를 자동 보증하거나 불일치 그림을 자동 유료 보정하지 않습니다.\n\ngenerate 호환 모드의 새 초상은 분위기 샘플을 사용하는 Qwen Edit 생성과 한 명·흰 배경 검사를 거칩니다. 기존 적용 인물 및 접수·접수 불확실 구형 작업은 유지합니다. 그 작업은 원래 steps·해상도로 끝날 수 있습니다.\n\n후보는 자산으로 보관하지만 문서에 자동 적용하지 않습니다(자동 적용은 prepare-images). source=library는 생성 장면에도 쓰는 분류값이며 고정 10종만 뜻하지 않습니다. 동일 문맥 결과·진행 작업을 재사용하고 바뀐 문맥은 새 작업일 수 있습니다. demo는 업로드 후보만 반환합니다. 진행 중은 503 image_in_progress로 같은 요청을 이어 조회합니다. 접수 불확실·실행 실패·만료 작업을 새 유료 작업으로 자동 대체하지 않습니다. 생성 중 문맥 변경은 image_card_changed로 오래된 결과 저장을 막습니다. 브라우저 취소는 Comfy 작업 취소가 아닙니다.",
@@ -385,7 +388,9 @@ OPS["prepare_images"]["errors"] += ["storyboard_cards_invalid", "storyboard_plan
 OPS["prepare_images"]["description"] += (
     "\n\n### 롤백 가능한 4컷 실험\n\n"
     "위 해상도는 기본 single 경로입니다. STUDIO_SCENE_MODE=storyboard4에서는 인물 선택·고정은 그대로 두고 "
-    "장면 최대 4개를 문서 순서로 예약합니다. GPT는 컷별 글·원문 근거를 설계하고 기준 인물 번호를 통일합니다. "
+    "장면 최대 4개를 문서 순서로 예약하되 기준 인물의 합집합이 3명을 넘기 전에 묶음을 나눕니다. "
+    "한 카드 자체에 4명 이상이면 카드 내용을 나누도록 안내합니다. 시작 전 개수 검사에도 모든 예상 원본 시트를 합산합니다. "
+    "GPT는 컷별 글·원문 근거를 설계하고 기준 인물 번호를 통일합니다. "
     "Qwen Edit 50 steps·CFG 4, 1024×1024 latent로 2×2 시트를 생성해 좌상→우상→좌하→우하의 "
     "512×512 컷으로 잘라 한 트랜잭션에서 함께 적용합니다. 원본도 보관하지만 독자 문서에는 넣지 않습니다. "
     "이지리드 설계는 컷마다 핵심 뜻 하나와 구체적인 단어를 정하고, 근거 있는 집·돈·문서 등의 익숙한 아이콘을 적극 활용합니다. "
@@ -396,6 +401,53 @@ OPS["prepare_images"]["description"] += (
     "컷 경계·얼굴·상황의 정확성을 자동 보장하지 않습니다. single로 되돌리면 새 묶음은 기존 경로지만 "
     "이미 예약된 묶음은 같은 유료 작업을 이어 확인합니다. 수동 assist/images는 계속 단일 카드 경로입니다. "
     "실험의 Comfy 조회는 최대 45초이며 running이면 동일 API로 이어 호출합니다.")
+OPS["image_candidates"]["description"] = (
+    "**이 API는 항상 개별 카드 한 장(1컷) 경로입니다. STUDIO_SCENE_MODE=storyboard4도 자동 prepare-images에만 적용됩니다.**\n\n"
+    + OPS["image_candidates"]["description"])
+JOB_EXAMPLE = {"jobId": "image-job-example", "projectId": "project-example", "mode": "single",
+    "cardIds": ["card-1"], "status": "running", "submissionState": "accepted", "providerJobId": "comfy-job-example",
+    "workflowAvailable": True, "createdAt": 1789700000.0, "preparedAt": 1789700001.0, "assetIds": []}
+describe("image_jobs", "그림 생성 잡 목록 — 현재·과거 작업 찾기",
+    "생성 진행 중이거나 생성 결과의 실제 프롬프트를 확인할 때 호출합니다.",
+    "GET image-jobs?limit=20&offset=0. limit은 1~100, offset은 0 이상입니다. 본문은 없습니다.",
+    "jobs는 잡 생성 순서의 역순입니다. nextOffset이 null이면 마지막 페이지입니다. mode는 single/storyboard4/library, "
+    "cardIds는 해당 잡의 카드이며 4컷은 설계 전까지 빈 배열일 수 있습니다. accepted는 접수됐다는 뜻이지 생성 완료가 아닙니다. "
+    "uncertain은 접수 여부 불확실, not-submitted는 아직 접수되지 않음, not-applicable은 고정 캐릭터 적용입니다. "
+    "createdAt/preparedAt은 Unix 초, 구형 잡의 createdAt은 null일 수 있습니다.",
+    "현재 제작자의 미삭제 자료에 저장된 잡만 읽습니다. AI·Comfy 호출, 폴링, 재생성, 잡/자료 수정이 없고 요금도 발생하지 않습니다. Cache-Control: no-store.",
+    "jobs[].jobId로 상세를 조회합니다. 현재 생성 진행은 기존 prepare-images/assist/images로 이어 확인합니다.",
+    ref("ImageJobList"), {"jobs": [JOB_EXAMPLE], "nextOffset": None}, errors="not_found")
+describe("image_job_detail", "그림 생성 잡 상세 — 실제 워크플로우 프롬프트 조회",
+    "잡 목록에서 선택한 작업의 최종 영어 프롬프트·레퍼런스·설계 내용을 확인할 때 호출합니다.",
+    "GET image-jobs/{job_id}. 목록의 jobId를 사용합니다. 본문은 없습니다.",
+    "prompts는 저장된 인코더 입력 원문이며 nodeId/classType/role/text를 반환합니다. role은 positive/negative/other이고 "
+    "빈 네거티브 프롬프트도 포함합니다. settings는 모델·스텝·CFG·seed·latent 크기 등 허용된 노드 설정, "
+    "references는 실제 Picture 입력 슬롯과 파일명입니다. 새 잡은 당시 partyId/assetId/purpose 연결을 보관하며 구형 잡은 "
+    "연결을 추측하지 않고 null/unknown으로 반환합니다. designs는 컷별 LLM 구성이고 prompts와 구분합니다. "
+    "workflowAvailable=false이면 최종 프롬프트·설정·레퍼런스 배열은 비어 있습니다. prepared는 전송 전 프롬프트이며 "
+    "accepted/uncertain은 해당 접수 시도의 저장 원문입니다. pending/planned의 오래된 워크플로우는 숨깁니다. "
+    "4컷은 전체 시트 프롬프트 하나와 컷별 designs를 반환하고, library는 워크플로우가 없습니다.",
+    "저장된 스냅샷을 읽을 뿐 현재 코드로 프롬프트를 재조립하지 않습니다. 유료 작업을 건드리지 않으며 "
+    "API 키·인증 헤더·poll URL·서명된 다운로드 URL·원시 워크플로우는 노출하지 않습니다. "
+    "장면 문구에 원문 개인정보가 있을 수 있어 소유자 인증과 no-store 응답을 적용합니다.",
+    "최종 positive 프롬프트와 designs, references를 대조하세요. 결과 이미지의 정확성을 보장하거나 차단하는 기능이 아닙니다.",
+    ref("ImageJobDetail"), {**JOB_EXAMPLE,
+        "prompts": [{"nodeId": "4", "classType": "TextEncodeQwenImageEditPlus", "role": "positive", "text": "Simple animation-style image or illustration. Characters (expressions): ... Situation: ... Objects: ..."}],
+        "settings": [{"nodeId": "11", "classType": "KSampler", "values": {"steps": 50, "cfg": 4.0}}],
+        "references": [{"imageNumber": 1, "loadNodeId": "20", "filename": "example.png", "purpose": "character", "partyId": "party-1", "assetId": "portrait-1"}],
+        "designs": []}, errors="not_found")
+
+for name in ("prepare_images", "image_candidates"):
+    OPS[name]["description"] += (
+        "\n\n### 컷별 필수 설계 항목\n\n"
+        "새 GPT 설계는 인물·표정·위치·행동(characters), 상황(situation), 오브젝트·상태·위치(objects)를 "
+        "모든 컷에 필수로 분류합니다. 서버가 인물 partyId를 실제 Picture 레퍼런스 번호에 연결하고 "
+        "인물 수와 인물별 위치·표정·행동, 상황, 모든 지정 오브젝트를 영어 프롬프트에 포함합니다. "
+        "같은 partyId의 반복 항목은 프롬프트에서 한 인물로 정리합니다. "
+        "인물 또는 사물이 필요 없으면 빈 배열로 명시하며 없는 요소를 발명하지 않습니다. "
+        "분류·표정·상황·오브젝트 선택은 LLM의 판단이고, 외형은 레퍼런스만 참고합니다. "
+        "지정 요소가 실제 그림에 모두 나오는지 검사해 차단하지 않습니다. "
+        "이미 접수·접수 불확실 작업은 원래 워크플로로 이어 확인하며 완료 그림도 자동 교체하지 않습니다.")
 
 
 def error_responses(codes, validation):
@@ -407,6 +459,8 @@ def error_responses(codes, validation):
         entry["description"] += f"\n- **{code}**: {message} {action}\n"
         entry["content"]["application/json"]["examples"][code] = {
             "summary": code, "description": action, "value": {"detail": {"code": code, "message": message}}}
+        if status == 429:
+            entry["headers"] = {"Retry-After": {"description": "다음 UTC 정시까지 기다릴 초 단위 시간입니다.", "schema": {"type": "string"}}}
     if validation:
         entry = responses.setdefault("422", {"description": "입력 필드의 형식·필수 여부·길이·열거값 검증 오류입니다.", "content": {
             "application/json": {"schema": ref("HTTPValidationError"), "examples": {}}}})
@@ -445,7 +499,8 @@ def enrich_openapi(schema):
             codes = ([] if public else ["unauthorized"]) + doc["errors"]
             if "requestBody" in operation:
                 codes.append("request_too_large")
-            operation["responses"] = error_responses(codes, "requestBody" in operation)
+            operation["responses"] = error_responses(codes, "requestBody" in operation or
+                any(p.get("in") == "query" for p in operation.get("parameters", [])))
             status = "204" if name in {"remove", "reset"} else "201" if name in {"create_text", "create_pdf"} else "200"
             if status == "204":
                 operation["responses"][status] = {"description": "처리 완료. 응답 본문이 없습니다."}
@@ -470,6 +525,8 @@ def enrich_openapi(schema):
                     parameter.update(description="자료 생성 응답의 id 또는 작업함 목록의 id. 예시 ID를 실제 값으로 교체하세요.", example="project-example")
                 elif parameter["name"] == "publication_id":
                     parameter.update(description="이 자료의 게시본 생성/목록 응답에서 얻은 id. 게시본 version 숫자와 다릅니다.", example="publication-example")
+                elif parameter["name"] == "job_id":
+                    parameter.update(description="이 자료의 image-jobs 목록에서 얻은 jobId. Comfy providerJobId와 다릅니다.", example="image-job-example")
             if name in {"create_pdf", "upload_image"}:
                 media = operation["requestBody"]["content"]["multipart/form-data"]
                 body_model = schemas[media["schema"]["$ref"].rsplit("/", 1)[-1]]
